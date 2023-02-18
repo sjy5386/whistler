@@ -79,7 +79,7 @@ public class NotepadFrame extends JFrame {
     }
 
     private void open() {
-        final JFileChooser fileChooser = new JFileChooser();
+        final JFileChooser fileChooser = new TextFileChooser();
         if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 this.textArea.setText(this.notepad.open(Paths.get(fileChooser.getSelectedFile().toURI())));
@@ -91,7 +91,7 @@ public class NotepadFrame extends JFrame {
 
     private void save() {
         this.notepad.setContent(this.textArea.getText());
-        final JFileChooser fileChooser = new JFileChooser();
+        final JFileChooser fileChooser = new TextFileChooser();
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 this.notepad.save(Paths.get(fileChooser.getSelectedFile().toURI()));
