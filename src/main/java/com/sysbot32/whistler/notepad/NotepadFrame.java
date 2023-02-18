@@ -23,7 +23,10 @@ public class NotepadFrame extends JFrame {
 
     private JMenuBar createMenuBar() {
         final JMenuBar menuBar = new JMenuBar();
+
         menuBar.add(this.createFileMenu());
+        menuBar.add(this.createFormatMenu());
+
         return menuBar;
     }
 
@@ -45,5 +48,19 @@ public class NotepadFrame extends JFrame {
         fileMenu.add(exitMenuItem);
 
         return fileMenu;
+    }
+
+    private JMenu createFormatMenu() {
+        final JMenu formatMenu = new JMenu("Format");
+
+        final JMenuItem wordWrapMenuItem = new JCheckBoxMenuItem("Word Wrap");
+        final JMenuItem fontMenuItem = new JMenuItem("Font");
+
+        wordWrapMenuItem.addActionListener(e -> this.textArea.setLineWrap(!this.textArea.getLineWrap()));
+
+        formatMenu.add(wordWrapMenuItem);
+        formatMenu.add(fontMenuItem);
+
+        return formatMenu;
     }
 }
