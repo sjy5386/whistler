@@ -39,6 +39,7 @@ public class NotepadFrame extends JFrame {
         final JMenuItem saveAsMenuItem = new JMenuItem("Save As");
         final JMenuItem exitMenuItem = new JMenuItem("Exit");
 
+        newMenuItem.addActionListener(e -> this.textArea.setText(""));
         exitMenuItem.addActionListener(e -> System.exit(0));
 
         fileMenu.add(newMenuItem);
