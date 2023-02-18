@@ -46,6 +46,8 @@ public class NotepadFrame extends JFrame {
 
         newMenuItem.addActionListener(e -> this.createNew());
         openMenuItem.addActionListener(e -> this.open());
+        saveMenuItem.addActionListener(e -> this.save());
+        saveAsMenuItem.addActionListener(e -> this.save());
         exitMenuItem.addActionListener(e -> System.exit(0));
 
         fileMenu.add(newMenuItem);
@@ -80,11 +82,21 @@ public class NotepadFrame extends JFrame {
         final JFileChooser fileChooser = new JFileChooser();
         if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
-                this.notepad.open(Paths.get(fileChooser.getSelectedFile().toURI()));
+                this.textArea.setText(this.notepad.open(Paths.get(fileChooser.getSelectedFile().toURI())));
             } catch (final IOException ex) {
                 throw new RuntimeException(ex);
-            } finally {
-                this.textArea.setText(this.notepad.getContent());
+            }
+        }
+    }
+
+    private void save() {
+        this.notepad.setContent(this.textArea.getText());
+        final JFileChooser fileChooser = new JFileChooser();
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            try {
+                this.notepad.save(Paths.get(fileChooser.getSelectedFile().toURI()));
+            } catch (final IOException e) {
+                throw new RuntimeException(e);
             }
         }
     }

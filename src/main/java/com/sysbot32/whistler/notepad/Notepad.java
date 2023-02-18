@@ -26,5 +26,6 @@ public class Notepad {
 
     public void save(final Path path) throws IOException {
         Files.writeString(path, this.content);
+        this.path = path;
     }
 }
