@@ -9,13 +9,15 @@ import java.io.IOException;
 import java.nio.file.Paths;
 
 public class NotepadFrame extends JFrame {
+    private static final String UNTITLED = "Untitled";
+    private static final String TITLE = "Notepad";
     private final Notepad notepad;
     private final JTextArea textArea;
 
     public NotepadFrame(final Notepad notepad) {
         this.notepad = notepad;
 
-        this.setTitle("Notepad");
+        this.setTitle(UNTITLED + " - " + TITLE);
         this.setSize(1280, 720);
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
@@ -51,6 +53,7 @@ public class NotepadFrame extends JFrame {
         newMenuItem.addActionListener(e -> {
             this.notepad.createNew();
             this.textArea.setText(this.notepad.getContent());
+            this.setTitle(UNTITLED + " - " + TITLE);
         });
         openMenuItem.addActionListener(e -> {
             final JFileChooser fileChooser = new TextFileChooser();
@@ -59,6 +62,8 @@ public class NotepadFrame extends JFrame {
                     this.textArea.setText(this.notepad.open(Paths.get(fileChooser.getSelectedFile().toURI())));
                 } catch (final IOException ex) {
                     throw new RuntimeException(ex);
+                } finally {
+                    this.setTitle(this.notepad.getPath().getFileName().toString() + " - " + TITLE);
                 }
             }
         });
@@ -145,6 +150,8 @@ public class NotepadFrame extends JFrame {
                 this.notepad.save(Paths.get(fileChooser.getSelectedFile().toURI()));
             } catch (final IOException e) {
                 throw new RuntimeException(e);
+            } finally {
+                this.setTitle(this.notepad.getPath().getFileName().toString() + " - " + TITLE);
             }
         }
     }
