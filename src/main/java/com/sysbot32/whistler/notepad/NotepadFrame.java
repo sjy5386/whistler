@@ -7,6 +7,7 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.Objects;
 
 public class NotepadFrame extends JFrame {
     private static final String UNTITLED = "Untitled";
@@ -17,7 +18,7 @@ public class NotepadFrame extends JFrame {
     public NotepadFrame(final Notepad notepad) {
         this.notepad = notepad;
 
-        this.setTitle(UNTITLED + " - " + TITLE);
+        this.setTitle();
         this.setSize(1280, 720);
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
@@ -53,7 +54,7 @@ public class NotepadFrame extends JFrame {
         newMenuItem.addActionListener(e -> {
             this.notepad.createNew();
             this.textArea.setText(this.notepad.getContent());
-            this.setTitle(UNTITLED + " - " + TITLE);
+            this.setTitle();
         });
         openMenuItem.addActionListener(e -> {
             final JFileChooser fileChooser = new TextFileChooser();
@@ -63,7 +64,7 @@ public class NotepadFrame extends JFrame {
                 } catch (final IOException ex) {
                     throw new RuntimeException(ex);
                 } finally {
-                    this.setTitle(this.notepad.getPath().getFileName().toString() + " - " + TITLE);
+                    this.setTitle();
                 }
             }
         });
@@ -142,6 +143,10 @@ public class NotepadFrame extends JFrame {
         return editMenu;
     }
 
+    private void setTitle() {
+        this.setTitle((Objects.isNull(this.notepad.getPath()) ? UNTITLED : this.notepad.getPath().getFileName()) + " - " + TITLE);
+    }
+
     private void save() {
         this.notepad.setContent(this.textArea.getText());
         final JFileChooser fileChooser = new TextFileChooser();
@@ -151,7 +156,7 @@ public class NotepadFrame extends JFrame {
             } catch (final IOException e) {
                 throw new RuntimeException(e);
             } finally {
-                this.setTitle(this.notepad.getPath().getFileName().toString() + " - " + TITLE);
+                this.setTitle();
             }
         }
     }
