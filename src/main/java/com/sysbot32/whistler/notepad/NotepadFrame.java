@@ -69,8 +69,42 @@ public class NotepadFrame extends JFrame {
                 }
             }
         });
-        saveMenuItem.addActionListener(e -> this.save());
-        saveAsMenuItem.addActionListener(e -> this.save());
+        saveMenuItem.addActionListener(e -> {
+            this.notepad.setContent(this.textArea.getText());
+            if (Objects.isNull(this.notepad.getPath())) {
+                final JFileChooser fileChooser = new TextFileChooser();
+                if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    try {
+                        this.notepad.save(Paths.get(fileChooser.getSelectedFile().toURI()));
+                    } catch (final IOException ex) {
+                        throw new RuntimeException(ex);
+                    } finally {
+                        this.setTitle();
+                    }
+                }
+            } else {
+                try {
+                    this.notepad.save(this.notepad.getPath());
+                } catch (final IOException ex) {
+                    throw new RuntimeException(ex);
+                } finally {
+                    this.setTitle();
+                }
+            }
+        });
+        saveAsMenuItem.addActionListener(e -> {
+            this.notepad.setContent(this.textArea.getText());
+            final JFileChooser fileChooser = new TextFileChooser();
+            if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                try {
+                    this.notepad.save(Paths.get(fileChooser.getSelectedFile().toURI()));
+                } catch (final IOException ex) {
+                    throw new RuntimeException(ex);
+                } finally {
+                    this.setTitle();
+                }
+            }
+        });
         exitMenuItem.addActionListener(e -> System.exit(0));
 
         fileMenu.add(newMenuItem);
@@ -176,19 +210,5 @@ public class NotepadFrame extends JFrame {
 
     private void setTitle() {
         this.setTitle((Objects.isNull(this.notepad.getPath()) ? UNTITLED : this.notepad.getPath().getFileName()) + " - " + TITLE);
-    }
-
-    private void save() {
-        this.notepad.setContent(this.textArea.getText());
-        final JFileChooser fileChooser = new TextFileChooser();
-        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try {
-                this.notepad.save(Paths.get(fileChooser.getSelectedFile().toURI()));
-            } catch (final IOException e) {
-                throw new RuntimeException(e);
-            } finally {
-                this.setTitle();
-            }
-        }
     }
 }
