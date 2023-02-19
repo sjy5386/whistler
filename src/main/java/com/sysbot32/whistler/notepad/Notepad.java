@@ -26,17 +26,20 @@ public class Notepad {
 
     public String open(final Path path) throws IOException {
         this.content = Files.readString(path);
+        this.edited = false;
         this.path = path;
         return this.content;
     }
 
     public void save(final Path path) throws IOException {
         Files.writeString(path, this.content);
+        this.edited = false;
         this.path = path;
     }
 
     public String insert(final int offset, final String str) {
-        this.setContent(new StringBuilder(this.content).insert(offset, str).toString());
+        this.content = new StringBuilder(this.content).insert(offset, str).toString();
+        this.edited = true;
         return this.content;
     }
 
