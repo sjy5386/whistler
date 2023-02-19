@@ -5,6 +5,8 @@ import lombok.Getter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Getter
 public class Notepad {
@@ -35,5 +37,9 @@ public class Notepad {
 
     public int find(final String str, final int fromIndex) {
         return this.content.indexOf(str, fromIndex);
+    }
+
+    public static String getTimeDate() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("a h:mm yyyy-MM-dd"));
     }
 }
