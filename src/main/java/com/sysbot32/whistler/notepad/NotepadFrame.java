@@ -46,8 +46,20 @@ public class NotepadFrame extends JFrame {
         final JMenuItem saveAsMenuItem = new JMenuItem("Save As");
         final JMenuItem exitMenuItem = new JMenuItem("Exit");
 
-        newMenuItem.addActionListener(e -> this.createNew());
-        openMenuItem.addActionListener(e -> this.open());
+        newMenuItem.addActionListener(e -> {
+            this.notepad.createNew();
+            this.textArea.setText(this.notepad.getContent());
+        });
+        openMenuItem.addActionListener(e -> {
+            final JFileChooser fileChooser = new TextFileChooser();
+            if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                try {
+                    this.textArea.setText(this.notepad.open(Paths.get(fileChooser.getSelectedFile().toURI())));
+                } catch (final IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
         saveMenuItem.addActionListener(e -> this.save());
         saveAsMenuItem.addActionListener(e -> this.save());
         exitMenuItem.addActionListener(e -> System.exit(0));
@@ -56,6 +68,7 @@ public class NotepadFrame extends JFrame {
         fileMenu.add(openMenuItem);
         fileMenu.add(saveMenuItem);
         fileMenu.add(saveAsMenuItem);
+        fileMenu.addSeparator();
         fileMenu.add(exitMenuItem);
 
         return fileMenu;
@@ -80,22 +93,6 @@ public class NotepadFrame extends JFrame {
         formatMenu.add(fontMenuItem);
 
         return formatMenu;
-    }
-
-    private void createNew() {
-        this.notepad.createNew();
-        this.textArea.setText(this.notepad.getContent());
-    }
-
-    private void open() {
-        final JFileChooser fileChooser = new TextFileChooser();
-        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try {
-                this.textArea.setText(this.notepad.open(Paths.get(fileChooser.getSelectedFile().toURI())));
-            } catch (final IOException ex) {
-                throw new RuntimeException(ex);
-            }
-        }
     }
 
     private void save() {
