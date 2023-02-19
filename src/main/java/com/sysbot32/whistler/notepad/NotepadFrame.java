@@ -109,7 +109,7 @@ public class NotepadFrame extends JFrame {
         final JMenuItem replaceMenuItem = new JMenuItem("Replace");
         final JMenuItem goToMenuItem = new JMenuItem("Go To");
         final JMenuItem selectAllMenuItem = new JMenuItem("Select All");
-        final JMenuItem timeAndDateMenuItem = new JMenuItem("Time/Date");
+        final JMenuItem timeDateMenuItem = new JMenuItem("Time/Date");
 
         selectAllMenuItem.addActionListener(e -> this.textArea.selectAll());
 
@@ -126,7 +126,7 @@ public class NotepadFrame extends JFrame {
         editMenu.add(goToMenuItem);
         editMenu.addSeparator();
         editMenu.add(selectAllMenuItem);
-        editMenu.add(timeAndDateMenuItem);
+        editMenu.add(timeDateMenuItem);
 
         return editMenu;
     }
