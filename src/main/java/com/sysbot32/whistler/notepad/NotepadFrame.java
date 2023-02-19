@@ -132,6 +132,11 @@ public class NotepadFrame extends JFrame {
         final JMenuItem selectAllMenuItem = new JMenuItem("Select All");
         final JMenuItem timeDateMenuItem = new JMenuItem("Time/Date");
 
+        cutMenuItem.addActionListener(e -> {
+            this.notepad.setContent(this.textArea.getText());
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(this.textArea.getSelectedText()), null);
+            this.textArea.setText(this.notepad.delete(this.textArea.getSelectionStart(), this.textArea.getSelectionEnd()));
+        });
         copyMenuItem.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(this.textArea.getSelectedText()), null));
         deleteMenuItem.addActionListener(e -> {
             this.notepad.setContent(this.textArea.getText());
