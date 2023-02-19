@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.notepad;
 
+import say.swing.JFontChooser;
+
 import javax.swing.*;
 import java.awt.*;
 import java.io.IOException;
@@ -66,6 +68,13 @@ public class NotepadFrame extends JFrame {
         final JMenuItem fontMenuItem = new JMenuItem("Font");
 
         wordWrapMenuItem.addActionListener(e -> this.textArea.setLineWrap(!this.textArea.getLineWrap()));
+        fontMenuItem.addActionListener(e -> {
+            final JFontChooser fontChooser = new JFontChooser();
+            fontChooser.setSelectedFont(this.textArea.getFont());
+            if (fontChooser.showDialog(this) == 0) {
+                this.textArea.setFont(fontChooser.getSelectedFont());
+            }
+        });
 
         formatMenu.add(wordWrapMenuItem);
         formatMenu.add(fontMenuItem);
