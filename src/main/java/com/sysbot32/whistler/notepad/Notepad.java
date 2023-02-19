@@ -1,7 +1,6 @@
 package com.sysbot32.whistler.notepad;
 
 import lombok.Getter;
-import lombok.Setter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,13 +8,18 @@ import java.nio.file.Path;
 
 @Getter
 public class Notepad {
-    @Setter
     private String content = "";
+    private boolean edited = false;
     private Path path = null;
 
     public void createNew() {
         this.content = "";
         this.path = null;
+    }
+
+    public void setContent(final String content) {
+        this.edited = !this.content.equals(content);
+        this.content = content;
     }
 
     public String open(final Path path) throws IOException {
