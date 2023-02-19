@@ -5,7 +5,9 @@ import say.swing.JFontChooser;
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Objects;
@@ -138,6 +140,14 @@ public class NotepadFrame extends JFrame {
             this.textArea.setText(this.notepad.delete(this.textArea.getSelectionStart(), this.textArea.getSelectionEnd()));
         });
         copyMenuItem.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(this.textArea.getSelectedText()), null));
+        pasteMenuItem.addActionListener(e -> {
+            this.notepad.setContent(this.textArea.getText());
+            try {
+                this.textArea.setText(this.notepad.replace(this.textArea.getSelectionStart(), this.textArea.getSelectionEnd(), (String) Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null).getTransferData(DataFlavor.stringFlavor)));
+            } catch (final UnsupportedFlavorException | IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
         deleteMenuItem.addActionListener(e -> {
             this.notepad.setContent(this.textArea.getText());
             this.textArea.setText(this.notepad.delete(this.textArea.getSelectionStart(), this.textArea.getSelectionEnd()));
