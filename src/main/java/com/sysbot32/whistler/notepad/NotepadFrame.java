@@ -112,6 +112,10 @@ public class NotepadFrame extends JFrame {
         final JMenuItem timeDateMenuItem = new JMenuItem("Time/Date");
 
         selectAllMenuItem.addActionListener(e -> this.textArea.selectAll());
+        timeDateMenuItem.addActionListener(e -> {
+            this.notepad.setContent(this.textArea.getText());
+            this.textArea.setText(this.notepad.replace(this.textArea.getSelectionStart(), this.textArea.getSelectionEnd(), Notepad.getTimeDate()));
+        });
 
         editMenu.add(undoMenuItem);
         editMenu.addSeparator();
