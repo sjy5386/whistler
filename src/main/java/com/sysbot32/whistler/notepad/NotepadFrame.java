@@ -83,27 +83,6 @@ public class NotepadFrame extends JFrame {
         return fileMenu;
     }
 
-    private JMenu createFormatMenu() {
-        final JMenu formatMenu = new JMenu("Format");
-
-        final JMenuItem wordWrapMenuItem = new JCheckBoxMenuItem("Word Wrap");
-        final JMenuItem fontMenuItem = new JMenuItem("Font");
-
-        wordWrapMenuItem.addActionListener(e -> this.textArea.setLineWrap(!this.textArea.getLineWrap()));
-        fontMenuItem.addActionListener(e -> {
-            final JFontChooser fontChooser = new JFontChooser();
-            fontChooser.setSelectedFont(this.textArea.getFont());
-            if (fontChooser.showDialog(this) == 0) {
-                this.textArea.setFont(fontChooser.getSelectedFont());
-            }
-        });
-
-        formatMenu.add(wordWrapMenuItem);
-        formatMenu.add(fontMenuItem);
-
-        return formatMenu;
-    }
-
     private JMenu createEditMenu() {
         final JMenu editMenu = new JMenu("Edit");
 
@@ -155,6 +134,27 @@ public class NotepadFrame extends JFrame {
         editMenu.add(timeDateMenuItem);
 
         return editMenu;
+    }
+
+    private JMenu createFormatMenu() {
+        final JMenu formatMenu = new JMenu("Format");
+
+        final JMenuItem wordWrapMenuItem = new JCheckBoxMenuItem("Word Wrap");
+        final JMenuItem fontMenuItem = new JMenuItem("Font");
+
+        wordWrapMenuItem.addActionListener(e -> this.textArea.setLineWrap(!this.textArea.getLineWrap()));
+        fontMenuItem.addActionListener(e -> {
+            final JFontChooser fontChooser = new JFontChooser();
+            fontChooser.setSelectedFont(this.textArea.getFont());
+            if (fontChooser.showDialog(this) == 0) {
+                this.textArea.setFont(fontChooser.getSelectedFont());
+            }
+        });
+
+        formatMenu.add(wordWrapMenuItem);
+        formatMenu.add(fontMenuItem);
+
+        return formatMenu;
     }
 
     private void setTitle() {
