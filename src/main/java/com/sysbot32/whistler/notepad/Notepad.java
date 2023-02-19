@@ -32,4 +32,8 @@ public class Notepad {
         Files.writeString(path, this.content);
         this.path = path;
     }
+
+    public int find(final String str, final int fromIndex) {
+        return this.content.indexOf(str, fromIndex);
+    }
 }
