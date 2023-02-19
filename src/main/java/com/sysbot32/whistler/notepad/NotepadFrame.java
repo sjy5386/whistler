@@ -120,6 +120,10 @@ public class NotepadFrame extends JFrame {
         final JMenuItem timeDateMenuItem = new JMenuItem("Time/Date");
 
         copyMenuItem.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(this.textArea.getSelectedText()), null));
+        deleteMenuItem.addActionListener(e -> {
+            this.notepad.setContent(this.textArea.getText());
+            this.textArea.setText(this.notepad.delete(this.textArea.getSelectionStart(), this.textArea.getSelectionEnd()));
+        });
         goToMenuItem.addActionListener(e -> {
             try {
                 final int offset = this.textArea.getLineStartOffset(Integer.parseInt(JOptionPane.showInputDialog(this, "Line Number: ", "Go To Line", JOptionPane.PLAIN_MESSAGE)) - 1);
