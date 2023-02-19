@@ -43,6 +43,12 @@ public class Notepad {
         return this.content;
     }
 
+    public String replace(final int start, final int end, final String str) {
+        this.content = new StringBuilder(this.content).replace(start, end, str).toString();
+        this.edited = true;
+        return this.content;
+    }
+
     public int find(final String str, final int fromIndex) {
         return this.content.indexOf(str, fromIndex);
     }
