@@ -35,6 +35,11 @@ public class Notepad {
         this.path = path;
     }
 
+    public String insert(final int offset, final String str) {
+        this.setContent(new StringBuilder(this.content).insert(offset, str).toString());
+        return this.content;
+    }
+
     public int find(final String str, final int fromIndex) {
         return this.content.indexOf(str, fromIndex);
     }
