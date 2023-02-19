@@ -3,6 +3,7 @@ package com.sysbot32.whistler.notepad;
 import say.swing.JFontChooser;
 
 import javax.swing.*;
+import javax.swing.text.BadLocationException;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
@@ -119,6 +120,15 @@ public class NotepadFrame extends JFrame {
         final JMenuItem timeDateMenuItem = new JMenuItem("Time/Date");
 
         copyMenuItem.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(this.textArea.getSelectedText()), null));
+        goToMenuItem.addActionListener(e -> {
+            try {
+                final int offset = this.textArea.getLineStartOffset(Integer.parseInt(JOptionPane.showInputDialog(this, "Line Number: ", "Go To Line", JOptionPane.PLAIN_MESSAGE)) - 1);
+                this.textArea.setSelectionStart(offset);
+                this.textArea.setSelectionEnd(offset);
+            } catch (final BadLocationException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
         selectAllMenuItem.addActionListener(e -> this.textArea.selectAll());
         timeDateMenuItem.addActionListener(e -> {
             this.notepad.setContent(this.textArea.getText());
