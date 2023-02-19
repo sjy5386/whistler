@@ -1,6 +1,7 @@
 package com.sysbot32.whistler.notepad;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,10 +10,19 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 @Getter
+@NoArgsConstructor
 public class Notepad {
     private String content = "";
     private boolean edited = false;
     private Path path = null;
+
+    public Notepad(final Path path) {
+        try {
+            this.open(path);
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     public void createNew() {
         this.content = "";
