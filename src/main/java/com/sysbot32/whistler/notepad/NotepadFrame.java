@@ -4,6 +4,7 @@ import say.swing.JFontChooser;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.nio.file.Paths;
 
@@ -111,6 +112,7 @@ public class NotepadFrame extends JFrame {
         final JMenuItem selectAllMenuItem = new JMenuItem("Select All");
         final JMenuItem timeDateMenuItem = new JMenuItem("Time/Date");
 
+        copyMenuItem.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(this.textArea.getSelectedText()), null));
         selectAllMenuItem.addActionListener(e -> this.textArea.selectAll());
         timeDateMenuItem.addActionListener(e -> {
             this.notepad.setContent(this.textArea.getText());
