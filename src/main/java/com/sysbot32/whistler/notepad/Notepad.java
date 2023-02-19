@@ -59,6 +59,12 @@ public class Notepad {
         return this.content;
     }
 
+    public String delete(final int start, final int end) {
+        this.content = new StringBuilder(this.content).delete(start, end).toString();
+        this.edited = true;
+        return this.content;
+    }
+
     public int find(final String str, final int fromIndex) {
         return this.content.indexOf(str, fromIndex);
     }
