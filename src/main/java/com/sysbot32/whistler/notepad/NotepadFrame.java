@@ -111,6 +111,8 @@ public class NotepadFrame extends JFrame {
         final JMenuItem selectAllMenuItem = new JMenuItem("Select All");
         final JMenuItem timeAndDateMenuItem = new JMenuItem("Time/Date");
 
+        selectAllMenuItem.addActionListener(e -> this.textArea.selectAll());
+
         editMenu.add(undoMenuItem);
         editMenu.addSeparator();
         editMenu.add(cutMenuItem);
