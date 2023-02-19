@@ -32,6 +32,7 @@ public class NotepadFrame extends JFrame {
         final JMenuBar menuBar = new JMenuBar();
 
         menuBar.add(this.createFileMenu());
+        menuBar.add(this.createEditMenu());
         menuBar.add(this.createFormatMenu());
 
         return menuBar;
@@ -93,6 +94,39 @@ public class NotepadFrame extends JFrame {
         formatMenu.add(fontMenuItem);
 
         return formatMenu;
+    }
+
+    private JMenu createEditMenu() {
+        final JMenu editMenu = new JMenu("Edit");
+
+        final JMenuItem undoMenuItem = new JMenuItem("Undo");
+        final JMenuItem cutMenuItem = new JMenuItem("Cut");
+        final JMenuItem copyMenuItem = new JMenuItem("Copy");
+        final JMenuItem pasteMenuItem = new JMenuItem("Paste");
+        final JMenuItem deleteMenuItem = new JMenuItem("Delete");
+        final JMenuItem findMenuItem = new JMenuItem("Find");
+        final JMenuItem findNextMenuItem = new JMenuItem("Find Next");
+        final JMenuItem replaceMenuItem = new JMenuItem("Replace");
+        final JMenuItem goToMenuItem = new JMenuItem("Go To");
+        final JMenuItem selectAllMenuItem = new JMenuItem("Select All");
+        final JMenuItem timeAndDateMenuItem = new JMenuItem("Time/Date");
+
+        editMenu.add(undoMenuItem);
+        editMenu.addSeparator();
+        editMenu.add(cutMenuItem);
+        editMenu.add(copyMenuItem);
+        editMenu.add(pasteMenuItem);
+        editMenu.add(deleteMenuItem);
+        editMenu.addSeparator();
+        editMenu.add(findMenuItem);
+        editMenu.add(findNextMenuItem);
+        editMenu.add(replaceMenuItem);
+        editMenu.add(goToMenuItem);
+        editMenu.addSeparator();
+        editMenu.add(selectAllMenuItem);
+        editMenu.add(timeAndDateMenuItem);
+
+        return editMenu;
     }
 
     private void save() {
