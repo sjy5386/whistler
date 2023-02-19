@@ -142,6 +142,7 @@ public class NotepadFrame extends JFrame {
         final JMenuItem wordWrapMenuItem = new JCheckBoxMenuItem("Word Wrap");
         final JMenuItem fontMenuItem = new JMenuItem("Font");
         final JMenuItem colorMenuItem = new JMenuItem("Color");
+        final JMenuItem backgroundColorMenuItem = new JMenuItem("Background Color");
 
         wordWrapMenuItem.addActionListener(e -> this.textArea.setLineWrap(!this.textArea.getLineWrap()));
         fontMenuItem.addActionListener(e -> {
@@ -157,11 +158,18 @@ public class NotepadFrame extends JFrame {
                 this.textArea.setForeground(color);
             }
         });
+        backgroundColorMenuItem.addActionListener(e -> {
+            final Color color = JColorChooser.showDialog(this, null, this.textArea.getBackground());
+            if (Objects.nonNull(color)) {
+                this.textArea.setBackground(color);
+            }
+        });
 
         formatMenu.add(wordWrapMenuItem);
         formatMenu.add(fontMenuItem);
         formatMenu.addSeparator();
         formatMenu.add(colorMenuItem);
+        formatMenu.add(backgroundColorMenuItem);
 
         return formatMenu;
     }
