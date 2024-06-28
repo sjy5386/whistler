@@ -8,6 +8,7 @@ import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.UnsupportedFlavorException;
+import java.awt.print.PrinterException;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Objects;
@@ -52,6 +53,7 @@ public class NotepadFrame extends JFrame {
         final JMenuItem openMenuItem = new JMenuItem("Open");
         final JMenuItem saveMenuItem = new JMenuItem("Save");
         final JMenuItem saveAsMenuItem = new JMenuItem("Save As");
+        final JMenuItem printMenuItem = new JMenuItem("Print");
         final JMenuItem exitMenuItem = new JMenuItem("Exit");
 
         newMenuItem.addActionListener(e -> {
@@ -107,12 +109,21 @@ public class NotepadFrame extends JFrame {
                 }
             }
         });
+        printMenuItem.addActionListener(e -> {
+            try {
+                this.textArea.print();
+            } catch (final PrinterException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
         exitMenuItem.addActionListener(e -> System.exit(0));
 
         fileMenu.add(newMenuItem);
         fileMenu.add(openMenuItem);
         fileMenu.add(saveMenuItem);
         fileMenu.add(saveAsMenuItem);
+        fileMenu.addSeparator();
+        fileMenu.add(printMenuItem);
         fileMenu.addSeparator();
         fileMenu.add(exitMenuItem);
 
