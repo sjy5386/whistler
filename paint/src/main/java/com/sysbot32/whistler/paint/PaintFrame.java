@@ -103,15 +103,17 @@ public class PaintFrame extends JFrame {
     }
 
     private void buildToolBox() {
-        this.toolBox.setPreferredSize(new Dimension(64, 0));
+        this.toolBox.setPreferredSize(new Dimension(56, 0));
         this.toolBox.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         this.toolButtons.setOpaque(false);
         for (final PaintTool tool : PaintTool.values()) {
-            final JToggleButton button = new JToggleButton(shortLabel(tool));
+            final JToggleButton button = new JToggleButton(ToolIcons.icon(tool));
             button.setToolTipText(tool.displayName());
-            button.setMargin(new Insets(1, 1, 1, 1));
+            button.setMargin(new Insets(2, 2, 2, 2));
             button.setFocusable(false);
-            button.setFont(button.getFont().deriveFont(9f));
+            button.setPreferredSize(new Dimension(24, 24));
+            button.setMinimumSize(new Dimension(24, 24));
+            button.setHorizontalAlignment(SwingConstants.CENTER);
             button.addActionListener(e -> {
                 this.paint.setTool(tool);
                 this.refreshToolOptions();
@@ -122,31 +124,10 @@ public class PaintFrame extends JFrame {
             this.toolButtonMap.put(tool, button);
             this.toolButtons.add(button);
         }
-        this.toolOptions.setPreferredSize(new Dimension(56, 72));
+        this.toolOptions.setPreferredSize(new Dimension(52, 72));
         this.toolOptions.setBorder(BorderFactory.createEtchedBorder());
         this.toolBox.add(this.toolButtons, BorderLayout.NORTH);
         this.toolBox.add(this.toolOptions, BorderLayout.CENTER);
-    }
-
-    private static String shortLabel(final PaintTool tool) {
-        return switch (tool) {
-            case FREE_FORM_SELECT -> "FSel";
-            case SELECT -> "Sel";
-            case ERASER -> "Ers";
-            case FILL -> "Fill";
-            case PICK_COLOR -> "Pick";
-            case MAGNIFIER -> "Mag";
-            case PENCIL -> "Pen";
-            case BRUSH -> "Bru";
-            case AIRBRUSH -> "Air";
-            case TEXT -> "Txt";
-            case LINE -> "Line";
-            case CURVE -> "Crv";
-            case RECTANGLE -> "Rect";
-            case POLYGON -> "Poly";
-            case ELLIPSE -> "Ell";
-            case ROUNDED_RECTANGLE -> "RRec";
-        };
     }
 
     private void buildColorBox() {
