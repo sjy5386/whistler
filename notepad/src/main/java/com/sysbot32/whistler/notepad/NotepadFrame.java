@@ -135,23 +135,6 @@ public class NotepadFrame extends JFrame {
         final int fontStyle = parseIntOrDefault(this.config.get("fontStyle"), Font.PLAIN);
         final int fontSize = parseIntOrDefault(this.config.get("fontSize"), 14);
         this.textArea.setFont(new Font(fontName, fontStyle, Math.max(fontSize, 1)));
-
-        final String fg = this.config.get("foreground");
-        if (Objects.nonNull(fg) && !fg.isBlank()) {
-            try {
-                this.textArea.setForeground(Color.decode(fg.trim()));
-            } catch (final NumberFormatException ignored) {
-                // keep default
-            }
-        }
-        final String bg = this.config.get("background");
-        if (Objects.nonNull(bg) && !bg.isBlank()) {
-            try {
-                this.textArea.setBackground(Color.decode(bg.trim()));
-            } catch (final NumberFormatException ignored) {
-                // keep default
-            }
-        }
     }
 
     private static int parseIntOrDefault(final String value, final int defaultValue) {
@@ -218,13 +201,7 @@ public class NotepadFrame extends JFrame {
         this.config.set("fontName", font.getFamily());
         this.config.set("fontStyle", String.valueOf(font.getStyle()));
         this.config.set("fontSize", String.valueOf(font.getSize()));
-        this.config.set("foreground", colorToHex(this.textArea.getForeground()));
-        this.config.set("background", colorToHex(this.textArea.getBackground()));
         this.config.save();
-    }
-
-    private static String colorToHex(final Color color) {
-        return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
     }
 
     private JMenuBar createMenuBar() {
@@ -325,8 +302,6 @@ public class NotepadFrame extends JFrame {
         formatMenu.setMnemonic(KeyEvent.VK_O);
 
         final JMenuItem fontMenuItem = new JMenuItem("Font...");
-        final JMenuItem colorMenuItem = new JMenuItem("Color...");
-        final JMenuItem backgroundColorMenuItem = new JMenuItem("Background Color...");
 
         this.wordWrapMenuItem.addActionListener(e ->
                 this.applyWordWrap(this.wordWrapMenuItem.isSelected(), true));
@@ -338,26 +313,9 @@ public class NotepadFrame extends JFrame {
                 this.saveConfig();
             }
         });
-        colorMenuItem.addActionListener(e -> {
-            final Color color = JColorChooser.showDialog(this, "Color", this.textArea.getForeground());
-            if (Objects.nonNull(color)) {
-                this.textArea.setForeground(color);
-                this.saveConfig();
-            }
-        });
-        backgroundColorMenuItem.addActionListener(e -> {
-            final Color color = JColorChooser.showDialog(this, "Background Color", this.textArea.getBackground());
-            if (Objects.nonNull(color)) {
-                this.textArea.setBackground(color);
-                this.saveConfig();
-            }
-        });
 
         formatMenu.add(this.wordWrapMenuItem);
         formatMenu.add(fontMenuItem);
-        formatMenu.addSeparator();
-        formatMenu.add(colorMenuItem);
-        formatMenu.add(backgroundColorMenuItem);
         return formatMenu;
     }
 

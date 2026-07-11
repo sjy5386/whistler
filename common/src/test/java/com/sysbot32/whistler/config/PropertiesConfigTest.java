@@ -18,8 +18,6 @@ class PropertiesConfigTest {
         written.set("fontName", "Dialog");
         written.set("fontStyle", "1");
         written.set("fontSize", "18");
-        written.set("foreground", "#112233");
-        written.set("background", "#fefefe");
         written.save();
 
         final PropertiesConfig loaded = new PropertiesConfig(file);
@@ -27,8 +25,6 @@ class PropertiesConfigTest {
         assertEquals("Dialog", loaded.get("fontName"));
         assertEquals("1", loaded.get("fontStyle"));
         assertEquals("18", loaded.get("fontSize"));
-        assertEquals("#112233", loaded.get("foreground"));
-        assertEquals("#fefefe", loaded.get("background"));
         assertEquals("fallback", loaded.get("missing", "fallback"));
         assertNull(loaded.get("missing"));
     }
