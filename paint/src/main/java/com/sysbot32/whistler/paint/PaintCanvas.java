@@ -13,8 +13,18 @@ import java.util.function.BiConsumer;
 
 /**
  * Interactive drawing surface: maps mouse input to {@link Paint} tool operations.
+ * Classic canvas edge handles (E / S / SE) resize the document by dragging.
  */
 public class PaintCanvas extends JComponent {
+    private static final int HANDLE_SIZE = 6;
+    private static final int HANDLE_HIT = 8;
+    private static final int HANDLE_MARGIN = 10;
+    private static final int MIN_CANVAS = 1;
+
+    private enum ResizeHandle {
+        NONE, EAST, SOUTH, SOUTH_EAST
+    }
+
     private Paint paint;
     private BiConsumer<Integer, Integer> statusListener = (x, y) -> {
     };
@@ -47,6 +57,12 @@ public class PaintCanvas extends JComponent {
 
     // Text placement
     private boolean placingText;
+
+    // Canvas size drag (classic bottom/right handles)
+    private boolean resizing;
+    private ResizeHandle activeHandle = ResizeHandle.NONE;
+    private int resizePreviewW;
+    private int resizePreviewH;
 
     public PaintCanvas(final Paint paint) {
         this.paint = Objects.requireNonNull(paint);
@@ -98,9 +114,11 @@ public class PaintCanvas extends JComponent {
 
     public void syncPreferredSize() {
         final int z = this.paint.getZoom();
+        final int w = this.resizing ? this.resizePreviewW : this.paint.getWidth();
+        final int h = this.resizing ? this.resizePreviewH : this.paint.getHeight();
         this.setPreferredSize(new Dimension(
-                this.paint.getWidth() * z,
-                this.paint.getHeight() * z
+                w * z + HANDLE_MARGIN,
+                h * z + HANDLE_MARGIN
         ));
     }
 
@@ -117,6 +135,8 @@ public class PaintCanvas extends JComponent {
         this.freeFormPoints.clear();
         this.movingSelection = false;
         this.placingText = false;
+        this.resizing = false;
+        this.activeHandle = ResizeHandle.NONE;
     }
 
     private int imgX(final MouseEvent e) {
@@ -127,8 +147,40 @@ public class PaintCanvas extends JComponent {
         return e.getY() / Math.max(1, this.paint.getZoom());
     }
 
+    private ResizeHandle hitResizeHandle(final int viewX, final int viewY) {
+        final int imgW = this.paint.getWidth() * Math.max(1, this.paint.getZoom());
+        final int imgH = this.paint.getHeight() * Math.max(1, this.paint.getZoom());
+        if (handleHit(viewX, viewY, imgW, imgH)) {
+            return ResizeHandle.SOUTH_EAST;
+        }
+        if (handleHit(viewX, viewY, imgW, imgH / 2)) {
+            return ResizeHandle.EAST;
+        }
+        if (handleHit(viewX, viewY, imgW / 2, imgH)) {
+            return ResizeHandle.SOUTH;
+        }
+        return ResizeHandle.NONE;
+    }
+
+    private static boolean handleHit(final int viewX, final int viewY, final int cx, final int cy) {
+        return Math.abs(viewX - cx) <= HANDLE_HIT && Math.abs(viewY - cy) <= HANDLE_HIT;
+    }
+
     private void onPress(final MouseEvent e) {
         this.requestFocusInWindow();
+        final ResizeHandle handle = hitResizeHandle(e.getX(), e.getY());
+        if (handle != ResizeHandle.NONE && SwingUtilities.isLeftMouseButton(e)) {
+            this.paint.commitSelectionIfAny();
+            this.resizing = true;
+            this.activeHandle = handle;
+            this.resizePreviewW = this.paint.getWidth();
+            this.resizePreviewH = this.paint.getHeight();
+            this.drawing = false;
+            updateResizeCursor(handle);
+            this.statusLabelCoords(this.resizePreviewW, this.resizePreviewH);
+            return;
+        }
+
         final int x = imgX(e);
         final int y = imgY(e);
         this.rightButton = SwingUtilities.isRightMouseButton(e);
@@ -253,6 +305,25 @@ public class PaintCanvas extends JComponent {
     }
 
     private void onDrag(final MouseEvent e) {
+        if (this.resizing) {
+            final int z = Math.max(1, this.paint.getZoom());
+            int newW = this.resizePreviewW;
+            int newH = this.resizePreviewH;
+            if (this.activeHandle == ResizeHandle.EAST || this.activeHandle == ResizeHandle.SOUTH_EAST) {
+                newW = Math.max(MIN_CANVAS, (e.getX() + z / 2) / z);
+            }
+            if (this.activeHandle == ResizeHandle.SOUTH || this.activeHandle == ResizeHandle.SOUTH_EAST) {
+                newH = Math.max(MIN_CANVAS, (e.getY() + z / 2) / z);
+            }
+            this.resizePreviewW = newW;
+            this.resizePreviewH = newH;
+            this.statusLabelCoords(newW, newH);
+            this.syncPreferredSize();
+            this.revalidate();
+            this.repaint();
+            return;
+        }
+
         final int x = imgX(e);
         final int y = imgY(e);
         this.shiftDown = e.isShiftDown();
@@ -288,6 +359,22 @@ public class PaintCanvas extends JComponent {
     }
 
     private void onRelease(final MouseEvent e) {
+        if (this.resizing) {
+            final int newW = this.resizePreviewW;
+            final int newH = this.resizePreviewH;
+            this.resizing = false;
+            this.activeHandle = ResizeHandle.NONE;
+            if (newW != this.paint.getWidth() || newH != this.paint.getHeight()) {
+                this.paint.attributes(newW, newH);
+            }
+            this.syncPreferredSize();
+            this.revalidate();
+            this.repaint();
+            fireDocumentChanged();
+            updateResizeCursor(hitResizeHandle(e.getX(), e.getY()));
+            return;
+        }
+
         final int x = imgX(e);
         final int y = imgY(e);
         this.shiftDown = e.isShiftDown();
@@ -393,6 +480,9 @@ public class PaintCanvas extends JComponent {
     }
 
     private void onMove(final MouseEvent e) {
+        if (!this.resizing) {
+            updateResizeCursor(hitResizeHandle(e.getX(), e.getY()));
+        }
         final int x = imgX(e);
         final int y = imgY(e);
         this.currX = x;
@@ -402,6 +492,20 @@ public class PaintCanvas extends JComponent {
         if (this.curvePhase > 0 || !this.polygonPoints.isEmpty()) {
             this.repaint();
         }
+    }
+
+    private void updateResizeCursor(final ResizeHandle handle) {
+        final int cursor = switch (handle) {
+            case EAST -> Cursor.E_RESIZE_CURSOR;
+            case SOUTH -> Cursor.S_RESIZE_CURSOR;
+            case SOUTH_EAST -> Cursor.SE_RESIZE_CURSOR;
+            case NONE -> Cursor.DEFAULT_CURSOR;
+        };
+        this.setCursor(Cursor.getPredefinedCursor(cursor));
+    }
+
+    private void statusLabelCoords(final int a, final int b) {
+        this.statusListener.accept(a, b);
     }
 
     private void finishPolygon() {
@@ -457,6 +561,12 @@ public class PaintCanvas extends JComponent {
             g2.setColor(getBackground());
             g2.fillRect(0, 0, getWidth(), getHeight());
 
+            final int canvasW = this.resizing ? this.resizePreviewW : this.paint.getWidth();
+            final int canvasH = this.resizing ? this.resizePreviewH : this.paint.getHeight();
+
+            // Document area (white when expanding beyond current bitmap during drag)
+            g2.setColor(Color.WHITE);
+            g2.fillRect(0, 0, canvasW * z, canvasH * z);
             g2.scale(z, z);
             g2.drawImage(this.paint.getImage(), 0, 0, null);
 
@@ -477,9 +587,37 @@ public class PaintCanvas extends JComponent {
             if (this.drawing || this.curvePhase > 0 || !this.polygonPoints.isEmpty()) {
                 drawPreview(g2);
             }
+
+            // Resize handles in view pixels (unscaled)
+            g2.setTransform(((Graphics2D) g).getTransform());
+            drawResizeHandles(g2, canvasW * z, canvasH * z);
         } finally {
             g2.dispose();
         }
+    }
+
+    private void drawResizeHandles(final Graphics2D g2, final int imgW, final int imgH) {
+        drawHandle(g2, imgW, imgH / 2);       // east
+        drawHandle(g2, imgW / 2, imgH);       // south
+        drawHandle(g2, imgW, imgH);           // south-east
+        if (this.resizing) {
+            g2.setColor(Color.BLACK);
+            g2.setStroke(new BasicStroke(
+                    1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+                    10f, new float[]{3f, 3f}, 0f
+            ));
+            g2.drawRect(0, 0, imgW, imgH);
+        }
+    }
+
+    private static void drawHandle(final Graphics2D g2, final int cx, final int cy) {
+        final int half = HANDLE_SIZE / 2;
+        final int x = cx - half;
+        final int y = cy - half;
+        g2.setColor(Color.WHITE);
+        g2.fillRect(x, y, HANDLE_SIZE, HANDLE_SIZE);
+        g2.setColor(Color.BLACK);
+        g2.drawRect(x, y, HANDLE_SIZE - 1, HANDLE_SIZE - 1);
     }
 
     private void drawPreview(final Graphics2D g2) {

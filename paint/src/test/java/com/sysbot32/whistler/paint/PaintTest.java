@@ -284,6 +284,22 @@ class PaintTest {
     }
 
     @Test
+    void attributesResizeKeepsContentAndFillsNewAreaWhite() {
+        final Paint paint = new Paint(8, 6);
+        paint.getImage().setRGB(1, 1, Color.BLUE.getRGB());
+        paint.attributes(12, 10);
+        assertEquals(12, paint.getWidth());
+        assertEquals(10, paint.getHeight());
+        assertEquals(Color.BLUE.getRGB(), paint.getImage().getRGB(1, 1));
+        assertEquals(Color.WHITE.getRGB(), paint.getImage().getRGB(11, 9));
+
+        paint.attributes(4, 4);
+        assertEquals(4, paint.getWidth());
+        assertEquals(4, paint.getHeight());
+        assertEquals(Color.BLUE.getRGB(), paint.getImage().getRGB(1, 1));
+    }
+
+    @Test
     void zoomLevelsAcceptedAndInvalidRejected() {
         final Paint paint = new Paint();
         paint.setZoom(2);
