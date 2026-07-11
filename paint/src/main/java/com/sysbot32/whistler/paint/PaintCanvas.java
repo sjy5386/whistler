@@ -455,7 +455,13 @@ public class PaintCanvas extends JComponent {
         this.statusListener.accept(x, y);
 
         if (this.movingSelection) {
-            this.paint.moveSelection(x - this.moveGrabX, y - this.moveGrabY);
+            // Ctrl = stamp, Shift = trail (both leave copies while dragging the selection).
+            this.paint.moveSelection(
+                    x - this.moveGrabX,
+                    y - this.moveGrabY,
+                    e.isControlDown(),
+                    e.isShiftDown()
+            );
             this.repaint();
             fireDocumentChanged();
             return;

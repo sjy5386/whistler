@@ -293,6 +293,54 @@ class PaintTest {
     }
 
     @Test
+    void stampSelectionLeavesCopyWhileStillFloating() {
+        final Paint paint = new Paint(40, 40);
+        BitmapOps.fillRect(paint.getImage(), 2, 2, 4, 4, Color.BLUE);
+        paint.beginRectangularSelection(2, 2, 6, 6);
+        paint.moveSelection(10, 10, true, false); // stamp at 2,2 then move to 10,10
+        // Hole was at 2,2 then stamp restored blue there; floating still at 10,10
+        assertEquals(Color.BLUE.getRGB(), paint.getImage().getRGB(3, 3));
+        assertTrue(paint.getSelection().isActive());
+        assertEquals(10, paint.getSelection().getX());
+        assertEquals(10, paint.getSelection().getY());
+        paint.commitSelectionIfAny();
+        assertEquals(Color.BLUE.getRGB(), paint.getImage().getRGB(11, 11));
+    }
+
+    @Test
+    void trailSelectionStampsAlongPath() {
+        final Paint paint = new Paint(50, 20);
+        BitmapOps.fillRect(paint.getImage(), 0, 0, 3, 3, Color.RED);
+        paint.beginRectangularSelection(0, 0, 3, 3);
+        paint.moveSelection(10, 0, false, true);
+        paint.moveSelection(20, 0, false, true);
+        paint.commitSelectionIfAny();
+        assertEquals(Color.RED.getRGB(), paint.getImage().getRGB(1, 1));   // first stamp
+        assertEquals(Color.RED.getRGB(), paint.getImage().getRGB(11, 1));  // second stamp
+        assertEquals(Color.RED.getRGB(), paint.getImage().getRGB(21, 1));  // final commit
+    }
+
+    @Test
+    void nudgeToolSizeAffectsBrushLineAndEraser() {
+        final Paint paint = new Paint();
+        paint.setTool(PaintTool.BRUSH);
+        paint.setBrushSize(4);
+        assertEquals(5, paint.nudgeToolSize(1));
+        assertEquals(3, paint.nudgeToolSize(-2));
+        paint.setTool(PaintTool.LINE);
+        paint.setLineWidth(1);
+        assertEquals(2, paint.nudgeToolSize(1));
+        // can exceed toolbar presets
+        paint.setLineWidth(8);
+        assertEquals(9, paint.nudgeToolSize(1));
+        paint.setTool(PaintTool.PENCIL);
+        assertEquals(-1, paint.nudgeToolSize(1));
+        paint.setTool(PaintTool.BRUSH);
+        paint.setBrushSize(Paint.MAX_TOOL_SIZE);
+        assertEquals(Paint.MAX_TOOL_SIZE, paint.nudgeToolSize(5));
+    }
+
+    @Test
     void freeFormSelectionExtractsRegion() {
         final Paint paint = new Paint(30, 30);
         BitmapOps.fillRect(paint.getImage(), 0, 0, 30, 30, Color.CYAN);

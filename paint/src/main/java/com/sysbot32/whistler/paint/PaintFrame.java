@@ -115,11 +115,42 @@ public class PaintFrame extends JFrame {
         });
 
         this.applyConfig();
+        this.installToolSizeShortcuts();
         this.syncToolButtons();
         this.syncColorSwatches();
         this.refreshToolOptions();
         this.refreshTitle();
         this.updateEditMenuState();
+    }
+
+    private void installToolSizeShortcuts() {
+        // Classic Paint: Ctrl+NumPad+ / Ctrl+NumPad- grow or shrink the active tool size.
+        final JRootPane root = this.getRootPane();
+        final InputMap inputMap = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        final ActionMap actionMap = root.getActionMap();
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ADD, InputEvent.CTRL_DOWN_MASK), "toolSizeUp");
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, InputEvent.CTRL_DOWN_MASK), "toolSizeDown");
+        actionMap.put("toolSizeUp", new AbstractAction() {
+            @Override
+            public void actionPerformed(final java.awt.event.ActionEvent e) {
+                PaintFrame.this.nudgeToolSize(+1);
+            }
+        });
+        actionMap.put("toolSizeDown", new AbstractAction() {
+            @Override
+            public void actionPerformed(final java.awt.event.ActionEvent e) {
+                PaintFrame.this.nudgeToolSize(-1);
+            }
+        });
+    }
+
+    private void nudgeToolSize(final int delta) {
+        final int size = this.paint.nudgeToolSize(delta);
+        if (size < 0) {
+            return;
+        }
+        this.refreshToolOptions();
+        this.statusLabel.setText(" Size: " + size);
     }
 
     private void buildToolBox() {
@@ -815,7 +846,7 @@ public class PaintFrame extends JFrame {
         this.cutItem.setEnabled(hasSel);
         this.copyItem.setEnabled(hasSel);
         this.clearSelectionItem.setEnabled(hasSel);
-        this.pasteItem.setEnabled(Objects.nonNull(this.paint.getClipboard()));
+        this.pasteItem.setEnabled(this.paint.canPaste());
     }
 
     private void refreshTitle() {

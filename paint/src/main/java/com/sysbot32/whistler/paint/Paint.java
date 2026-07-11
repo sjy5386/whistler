@@ -25,6 +25,7 @@ public class Paint {
     public static final int DEFAULT_WIDTH = 400;
     public static final int DEFAULT_HEIGHT = 300;
     public static final int MAX_UNDO = 3;
+    public static final int MAX_TOOL_SIZE = 100;
     public static final int[] ZOOM_LEVELS = {1, 2, 6, 8};
     public static final int[] LINE_WIDTHS = {1, 2, 3, 4, 5};
     public static final int[] ERASER_SIZES = {4, 6, 8, 10};
@@ -140,6 +141,37 @@ public class Paint {
 
     public void setAirbrushRadius(final int airbrushRadius) {
         this.airbrushRadius = Math.max(1, airbrushRadius);
+    }
+
+    /**
+     * Classic Ctrl+NumPad±: grow/shrink the active tool size (can exceed toolbar presets).
+     *
+     * @return the size after nudge, or {@code -1} if the current tool has no size
+     */
+    public int nudgeToolSize(final int delta) {
+        return switch (this.tool) {
+            case BRUSH -> {
+                this.brushSize = clampToolSize(this.brushSize + delta);
+                yield this.brushSize;
+            }
+            case ERASER -> {
+                this.eraserSize = clampToolSize(this.eraserSize + delta);
+                yield this.eraserSize;
+            }
+            case AIRBRUSH -> {
+                this.airbrushRadius = clampToolSize(this.airbrushRadius + delta);
+                yield this.airbrushRadius;
+            }
+            case LINE, CURVE, RECTANGLE, POLYGON, ELLIPSE, ROUNDED_RECTANGLE -> {
+                this.lineWidth = clampToolSize(this.lineWidth + delta);
+                yield this.lineWidth;
+            }
+            default -> -1;
+        };
+    }
+
+    private static int clampToolSize(final int size) {
+        return Math.max(1, Math.min(MAX_TOOL_SIZE, size));
     }
 
     public void setZoom(final int zoom) {
@@ -571,6 +603,38 @@ public class Paint {
         this.edited = true;
     }
 
+    /**
+     * Classic stamp/trail: paint the floating selection onto the document without ending the selection.
+     */
+    public void stampSelection() {
+        if (!this.selection.isActive()) {
+            return;
+        }
+        BitmapOps.composite(
+                this.image,
+                this.selection.getFloating(),
+                this.selection.getX(),
+                this.selection.getY(),
+                this.drawOpaque,
+                this.background
+        );
+        this.edited = true;
+    }
+
+    /**
+     * Move floating selection; with stamp ({@code ctrl}) or trail ({@code shift}), leave copies along the path.
+     */
+    public void moveSelection(final int x, final int y, final boolean stamp, final boolean trail) {
+        if (!this.selection.isActive()) {
+            return;
+        }
+        if ((stamp || trail)
+                && (x != this.selection.getX() || y != this.selection.getY())) {
+            stampSelection();
+        }
+        moveSelection(x, y);
+    }
+
     public void commitSelectionIfAny() {
         if (!this.selection.isActive()) {
             return;
@@ -592,6 +656,7 @@ public class Paint {
             return;
         }
         this.clipboard = BitmapOps.copyOf(this.selection.getFloating());
+        pushSystemClipboard(this.clipboard);
         this.selection.clear();
         this.edited = true;
     }
@@ -601,16 +666,37 @@ public class Paint {
             return;
         }
         this.clipboard = BitmapOps.copyOf(this.selection.getFloating());
+        pushSystemClipboard(this.clipboard);
+    }
+
+    public boolean canPaste() {
+        if (Objects.nonNull(this.clipboard)) {
+            return true;
+        }
+        return ImageClipboard.hasImage();
     }
 
     public void pasteClipboard() {
-        if (Objects.isNull(this.clipboard)) {
+        BufferedImage incoming = ImageClipboard.pasteImage();
+        if (Objects.isNull(incoming) && Objects.nonNull(this.clipboard)) {
+            incoming = BitmapOps.copyOf(this.clipboard);
+        }
+        if (Objects.isNull(incoming)) {
             return;
         }
+        this.clipboard = BitmapOps.copyOf(incoming);
         commitSelectionIfAny();
         pushUndo();
-        this.selection.setRectangular(BitmapOps.copyOf(this.clipboard), 0, 0);
+        this.selection.setRectangular(BitmapOps.copyOf(incoming), 0, 0);
         this.edited = true;
+    }
+
+    private static void pushSystemClipboard(final BufferedImage image) {
+        try {
+            ImageClipboard.copyImage(image);
+        } catch (final IllegalStateException ignored) {
+            // Clipboard locked by another app — keep local clipboard only.
+        }
     }
 
     public void clearSelection() {
