@@ -12,3 +12,4 @@ rootProject.name = 'whistler'
 
 include 'common'
 include 'notepad'
+include 'paint'
