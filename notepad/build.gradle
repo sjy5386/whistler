@@ -1,0 +1,14 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':common')
+
+    implementation 'ch.qos.logback:logback-classic:1.5.6'
+    implementation 'com.rover12421.opensource:JFontChooser:1.0.5-3'
+}
+
+application {
+    mainClass = 'com.sysbot32.whistler.notepad.NotepadApplication'
+}

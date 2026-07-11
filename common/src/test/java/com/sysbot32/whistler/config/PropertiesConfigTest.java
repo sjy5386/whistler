@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class PropertiesConfigTest {
     @Test
     void saveAndReloadRestoresWordWrapAndFontPrefs(@TempDir final Path tempDir) {
-        final Path file = tempDir.resolve("notepad.properties");
+        final Path file = tempDir.resolve("whistler.properties");
 
         final PropertiesConfig written = new PropertiesConfig(file);
         written.set("wordWrap", "true");

@@ -1,38 +1,36 @@
 plugins {
-    id 'java'
-    id 'application'
-    id 'io.freefair.lombok' version '9.1.0'
+    id 'io.freefair.lombok' apply false
 }
 
-group = 'com.sysbot32.whistler'
-version = '1.0-SNAPSHOT'
+allprojects {
+    group = 'com.sysbot32.whistler'
+    version = '1.0-SNAPSHOT'
+}
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
     }
-}
 
-repositories {
-    mavenCentral()
-}
+    repositories {
+        mavenCentral()
+    }
 
-application {
-    mainClass = 'com.sysbot32.whistler.Main'
-}
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
 
-dependencies {
-    implementation 'ch.qos.logback:logback-classic:1.5.6'
-    implementation 'com.rover12421.opensource:JFontChooser:1.0.5-3'
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
 
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-}
-
-test {
-    useJUnitPlatform()
+    test {
+        useJUnitPlatform()
+    }
 }

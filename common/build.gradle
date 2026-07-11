@@ -1,0 +1,5 @@
+plugins {
+    id 'java-library'
+}
+
+// Shared libraries for Whistler apps (config, future shared UI helpers).

@@ -55,7 +55,7 @@ public class PropertiesConfig implements Config {
                 Files.createDirectories(parent);
             }
             try (final OutputStream out = Files.newOutputStream(this.path)) {
-                this.properties.store(out, "Whistler Notepad settings");
+                this.properties.store(out, "Whistler settings");
             }
         } catch (final IOException e) {
             throw new RuntimeException("Failed to save config: " + this.path, e);
