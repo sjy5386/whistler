@@ -311,6 +311,20 @@ public final class BitmapOps {
             final Color background,
             final boolean opaque
     ) {
+        drawText(image, text, x, y, font, foreground, background, opaque, false);
+    }
+
+    public static void drawText(
+            final BufferedImage image,
+            final String text,
+            final int x,
+            final int y,
+            final Font font,
+            final Color foreground,
+            final Color background,
+            final boolean opaque,
+            final boolean underline
+    ) {
         final Graphics2D g = createDrawingGraphics(image);
         try {
             g.setFont(font);
@@ -323,6 +337,10 @@ public final class BitmapOps {
             }
             g.setColor(foreground);
             g.drawString(text, x, y);
+            if (underline && textWidth > 0) {
+                final int uy = y + Math.max(1, metrics.getDescent() / 2);
+                g.drawLine(x, uy, x + textWidth, uy);
+            }
         } finally {
             g.dispose();
         }
@@ -342,6 +360,22 @@ public final class BitmapOps {
             final Color foreground,
             final Color background,
             final boolean opaque
+    ) {
+        drawTextBlock(image, text, boxX, boxY, boxWidth, boxHeight, font, foreground, background, opaque, false);
+    }
+
+    public static void drawTextBlock(
+            final BufferedImage image,
+            final String text,
+            final int boxX,
+            final int boxY,
+            final int boxWidth,
+            final int boxHeight,
+            final Font font,
+            final Color foreground,
+            final Color background,
+            final boolean opaque,
+            final boolean underline
     ) {
         if (Objects.isNull(text) || text.isEmpty() || boxWidth <= 0 || boxHeight <= 0) {
             return;
@@ -364,6 +398,13 @@ public final class BitmapOps {
                     break;
                 }
                 g.drawString(line, boxX, lineY);
+                if (underline) {
+                    final int lineWidth = metrics.stringWidth(line);
+                    if (lineWidth > 0) {
+                        final int uy = lineY + Math.max(1, metrics.getDescent() / 2);
+                        g.drawLine(boxX, uy, boxX + lineWidth, uy);
+                    }
+                }
                 lineY += lineHeight;
             }
             g.setClip(oldClip);

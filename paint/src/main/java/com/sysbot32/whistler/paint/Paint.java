@@ -6,12 +6,15 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Polygon;
+import java.awt.font.TextAttribute;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -44,6 +47,7 @@ public class Paint {
     private int zoom = 1;
     private boolean drawOpaque = true;
     private Font textFont = new Font(Font.SANS_SERIF, Font.PLAIN, 12);
+    private boolean textUnderline = false;
 
     private final SelectionModel selection = new SelectionModel();
     private BufferedImage clipboard;
@@ -154,6 +158,23 @@ public class Paint {
 
     public void setTextFont(final Font textFont) {
         this.textFont = Objects.requireNonNull(textFont);
+    }
+
+    public void setTextUnderline(final boolean textUnderline) {
+        this.textUnderline = textUnderline;
+    }
+
+    /**
+     * Font used for the live editor and rasterize, including underline attribute when enabled.
+     */
+    public Font getEffectiveTextFont() {
+        final Map<TextAttribute, Object> attrs = new HashMap<>(this.textFont.getAttributes());
+        if (this.textUnderline) {
+            attrs.put(TextAttribute.UNDERLINE, TextAttribute.UNDERLINE_ON);
+        } else {
+            attrs.put(TextAttribute.UNDERLINE, -1);
+        }
+        return this.textFont.deriveFont(attrs);
     }
 
     public void pushUndo() {
@@ -482,7 +503,7 @@ public class Paint {
         pushUndo();
         BitmapOps.drawText(
                 this.image, text, x, y, this.textFont,
-                this.foreground, this.background, this.drawOpaque
+                this.foreground, this.background, this.drawOpaque, this.textUnderline
         );
         this.edited = true;
     }
@@ -508,7 +529,8 @@ public class Paint {
                 this.textFont,
                 this.foreground,
                 this.background,
-                this.drawOpaque
+                this.drawOpaque,
+                this.textUnderline
         );
         this.edited = true;
     }

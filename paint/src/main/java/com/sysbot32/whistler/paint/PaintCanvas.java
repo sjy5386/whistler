@@ -613,7 +613,7 @@ public class PaintCanvas extends JComponent {
     }
 
     private void styleTextEditor() {
-        final Font base = this.paint.getTextFont();
+        final Font base = this.paint.getEffectiveTextFont();
         final int z = Math.max(1, this.paint.getZoom());
         this.textEditor.setFont(base.deriveFont(base.getSize2D() * z));
         this.textEditor.setForeground(this.paint.getForeground());

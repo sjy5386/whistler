@@ -3,21 +3,22 @@ package com.sysbot32.whistler.paint;
 import javax.swing.*;
 import java.awt.*;
 import java.util.Objects;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 /**
- * Floating classic-style text toolbar (font / size / bold / italic).
+ * Floating classic-style text toolbar (font / size / bold / italic / underline).
  */
 public class TextToolbar extends JDialog {
     private final JComboBox<String> fontCombo;
     private final JSpinner sizeSpinner;
     private final JToggleButton boldButton;
     private final JToggleButton italicButton;
-    private Consumer<Font> fontListener = f -> {
+    private final JToggleButton underlineButton;
+    private BiConsumer<Font, Boolean> styleListener = (f, u) -> {
     };
     private boolean updating;
 
-    public TextToolbar(final Frame owner, final Font initial) {
+    public TextToolbar(final Frame owner, final Font initial, final boolean underline) {
         super(owner, "Fonts", false);
         this.setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
 
@@ -32,9 +33,18 @@ public class TextToolbar extends JDialog {
         this.boldButton = new JToggleButton("B");
         this.boldButton.setFont(this.boldButton.getFont().deriveFont(Font.BOLD));
         this.boldButton.setSelected(initial.isBold());
+        this.boldButton.setToolTipText("Bold");
+
         this.italicButton = new JToggleButton("I");
         this.italicButton.setFont(this.italicButton.getFont().deriveFont(Font.ITALIC));
         this.italicButton.setSelected(initial.isItalic());
+        this.italicButton.setToolTipText("Italic");
+
+        this.underlineButton = new JToggleButton("U");
+        final Font uFont = this.underlineButton.getFont();
+        this.underlineButton.setFont(uFont.deriveFont(Font.PLAIN));
+        this.underlineButton.setSelected(underline);
+        this.underlineButton.setToolTipText("Underline");
 
         final JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
         panel.add(new JLabel("Font:"));
@@ -43,33 +53,36 @@ public class TextToolbar extends JDialog {
         panel.add(this.sizeSpinner);
         panel.add(this.boldButton);
         panel.add(this.italicButton);
+        panel.add(this.underlineButton);
         this.setContentPane(panel);
         this.pack();
         this.setResizable(false);
 
-        this.fontCombo.addActionListener(e -> this.emitFont());
-        this.sizeSpinner.addChangeListener(e -> this.emitFont());
-        this.boldButton.addActionListener(e -> this.emitFont());
-        this.italicButton.addActionListener(e -> this.emitFont());
+        this.fontCombo.addActionListener(e -> this.emitStyle());
+        this.sizeSpinner.addChangeListener(e -> this.emitStyle());
+        this.boldButton.addActionListener(e -> this.emitStyle());
+        this.italicButton.addActionListener(e -> this.emitStyle());
+        this.underlineButton.addActionListener(e -> this.emitStyle());
     }
 
-    public void setFontListener(final Consumer<Font> fontListener) {
-        this.fontListener = Objects.requireNonNull(fontListener);
+    public void setStyleListener(final BiConsumer<Font, Boolean> styleListener) {
+        this.styleListener = Objects.requireNonNull(styleListener);
     }
 
-    public void syncFrom(final Font font) {
+    public void syncFrom(final Font font, final boolean underline) {
         this.updating = true;
         try {
             this.fontCombo.setSelectedItem(font.getFamily());
             this.sizeSpinner.setValue(Math.max(8, font.getSize()));
             this.boldButton.setSelected(font.isBold());
             this.italicButton.setSelected(font.isItalic());
+            this.underlineButton.setSelected(underline);
         } finally {
             this.updating = false;
         }
     }
 
-    private void emitFont() {
+    private void emitStyle() {
         if (this.updating) {
             return;
         }
@@ -82,6 +95,6 @@ public class TextToolbar extends JDialog {
         if (this.italicButton.isSelected()) {
             style |= Font.ITALIC;
         }
-        this.fontListener.accept(new Font(family, style, size));
+        this.styleListener.accept(new Font(family, style, size), this.underlineButton.isSelected());
     }
 }

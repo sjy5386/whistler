@@ -73,11 +73,13 @@ public class PaintFrame extends JFrame {
         this.canvas.setStatusListener((x, y) -> this.coordsLabel.setText("  " + x + ", " + y + "  "));
         final JScrollPane scrollPane = new JScrollPane(this.canvas);
 
-        this.textToolbar = new TextToolbar(this, this.paint.getTextFont());
-        this.textToolbar.setFontListener(font -> {
+        this.textToolbar = new TextToolbar(this, this.paint.getTextFont(), this.paint.isTextUnderline());
+        this.textToolbar.setStyleListener((font, underline) -> {
             this.paint.setTextFont(font);
+            this.paint.setTextUnderline(underline);
             this.canvas.applyLiveTextStyle();
-            this.statusLabel.setText(" Font: " + font.getFamily() + " " + font.getSize());
+            this.statusLabel.setText(" Font: " + font.getFamily() + " " + font.getSize()
+                    + (underline ? " U" : ""));
         });
 
         this.buildToolBox();
@@ -535,7 +537,7 @@ public class PaintFrame extends JFrame {
         final boolean show = this.textToolbarMenuItem.isSelected()
                 || this.paint.getTool() == PaintTool.TEXT;
         if (show) {
-            this.textToolbar.syncFrom(this.paint.getTextFont());
+            this.textToolbar.syncFrom(this.paint.getTextFont(), this.paint.isTextUnderline());
             if (!this.textToolbar.isVisible()) {
                 this.textToolbar.setLocationRelativeTo(this);
             }

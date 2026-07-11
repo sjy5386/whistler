@@ -154,6 +154,24 @@ class BitmapOpsTest {
     }
 
     @Test
+    void drawTextWithUnderlinePaintsBelowBaseline() {
+        final BufferedImage plain = BitmapOps.createBlank(80, 40);
+        final BufferedImage under = BitmapOps.createBlank(80, 40);
+        final Font font = new Font(Font.MONOSPACED, Font.PLAIN, 18);
+        BitmapOps.drawText(plain, "Hi", 8, 24, font, Color.BLACK, Color.WHITE, false, false);
+        BitmapOps.drawText(under, "Hi", 8, 24, font, Color.BLACK, Color.WHITE, false, true);
+        int extra = 0;
+        for (int y = 0; y < 40; y++) {
+            for (int x = 0; x < 80; x++) {
+                if (under.getRGB(x, y) != plain.getRGB(x, y)) {
+                    extra++;
+                }
+            }
+        }
+        assertTrue(extra > 0);
+    }
+
+    @Test
     void invertFlipRotateStretchChangePixels() {
         final BufferedImage image = BitmapOps.createBlank(4, 2);
         image.setRGB(0, 0, Color.BLACK.getRGB());
