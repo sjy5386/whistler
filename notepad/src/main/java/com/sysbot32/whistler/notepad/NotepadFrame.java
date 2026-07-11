@@ -440,7 +440,6 @@ public class NotepadFrame extends JFrame {
         }
         this.saveConfig();
         this.dispose();
-        System.exit(0);
     }
 
     private boolean confirmDiscardIfNeeded() {

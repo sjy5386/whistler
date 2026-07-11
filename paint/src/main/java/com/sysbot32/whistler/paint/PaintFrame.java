@@ -583,19 +583,19 @@ public class PaintFrame extends JFrame {
     }
 
     private void newDocument() {
+        this.canvas.commitTextIfEditing();
         if (!this.confirmDiscardIfNeeded()) {
             return;
         }
-        this.canvas.commitTextIfEditing();
         this.paint.createNew();
         this.refreshCanvas();
     }
 
     private void open() {
+        this.canvas.commitTextIfEditing();
         if (!this.confirmDiscardIfNeeded()) {
             return;
         }
-        this.canvas.commitTextIfEditing();
         final JFileChooser chooser = imageFileChooser();
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
@@ -610,6 +610,7 @@ public class PaintFrame extends JFrame {
     }
 
     private void save() {
+        this.canvas.commitTextIfEditing();
         if (Objects.isNull(this.paint.getPath())) {
             this.saveAs();
             return;
@@ -623,6 +624,7 @@ public class PaintFrame extends JFrame {
     }
 
     private void saveAs() {
+        this.canvas.commitTextIfEditing();
         final JFileChooser chooser = imageFileChooser();
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
@@ -779,7 +781,6 @@ public class PaintFrame extends JFrame {
         }
         this.textToolbar.dispose();
         this.dispose();
-        System.exit(0);
     }
 
     private boolean confirmDiscardIfNeeded() {

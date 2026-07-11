@@ -59,6 +59,40 @@ class PaintShellStructureTest {
     }
 
     @Test
+    void pendingTextIsCommittedBeforeDiscardConfirmation() throws Exception {
+        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/PaintFrame.java");
+        final String source = Files.readString(frame);
+        final String newDocument = source.substring(
+                source.indexOf("private void newDocument()"),
+                source.indexOf("private void open()")
+        );
+        final String open = source.substring(
+                source.indexOf("private void open()"),
+                source.indexOf("private void save()")
+        );
+        assertTrue(newDocument.indexOf("commitTextIfEditing()") < newDocument.indexOf("confirmDiscardIfNeeded()"));
+        assertTrue(open.indexOf("commitTextIfEditing()") < open.indexOf("confirmDiscardIfNeeded()"));
+    }
+
+    @Test
+    void pendingTextIsCommittedBeforeDirectSave() throws Exception {
+        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/PaintFrame.java");
+        final String source = Files.readString(frame);
+        final String save = source.substring(
+                source.indexOf("private void save()"),
+                source.indexOf("private void saveAs()")
+        );
+        final String saveAs = source.substring(
+                source.indexOf("private void saveAs()"),
+                source.indexOf("private void copyTo()")
+        );
+        assertTrue(save.contains("commitTextIfEditing()"));
+        assertTrue(saveAs.contains("commitTextIfEditing()"));
+        assertTrue(save.indexOf("commitTextIfEditing()") < save.indexOf("paint.save("));
+        assertTrue(saveAs.indexOf("commitTextIfEditing()") < saveAs.indexOf("paint.save("));
+    }
+
+    @Test
     void applicationMainClassExists() throws Exception {
         final Method main = PaintApplication.class.getMethod("main", String[].class);
         assertTrue(java.lang.reflect.Modifier.isStatic(main.getModifiers()));

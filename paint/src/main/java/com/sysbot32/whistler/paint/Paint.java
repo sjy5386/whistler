@@ -69,7 +69,7 @@ public class Paint {
         try {
             this.open(path);
         } catch (final IOException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to open image: " + path, e);
         }
     }
 
