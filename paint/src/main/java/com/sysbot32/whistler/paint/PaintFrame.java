@@ -3,6 +3,7 @@ package com.sysbot32.whistler.paint;
 import com.sysbot32.whistler.config.Config;
 
 import javax.swing.*;
+import javax.swing.border.LineBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.InputEvent;
@@ -12,10 +13,12 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
- * Classic XP Paint shell: menus, canvas, toolbox/color/status placeholders.
+ * Classic XP Paint shell: menus, toolbox, color box, status, canvas.
  */
 public class PaintFrame extends JFrame {
     private static final String UNTITLED = "untitled";
@@ -24,13 +27,28 @@ public class PaintFrame extends JFrame {
     private final Paint paint;
     private final Config config;
     private final PaintCanvas canvas;
-    private final JLabel statusLabel = new JLabel(" For Help, click Help Topics on the Help Menu.");
+    private final JLabel statusLabel = new JLabel(" For Help, click About Paint on the Help Menu.");
+    private final JLabel coordsLabel = new JLabel("  0, 0  ");
     private final JPanel statusBar = new JPanel(new BorderLayout());
     private final JCheckBoxMenuItem toolBoxMenuItem = new JCheckBoxMenuItem("Tool Box", true);
     private final JCheckBoxMenuItem colorBoxMenuItem = new JCheckBoxMenuItem("Color Box", true);
     private final JCheckBoxMenuItem statusBarMenuItem = new JCheckBoxMenuItem("Status Bar", true);
-    private final JPanel toolBox = new JPanel();
-    private final JPanel colorBox = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+    private final JCheckBoxMenuItem drawOpaqueMenuItem = new JCheckBoxMenuItem("Draw Opaque", true);
+    private final JPanel toolBox = new JPanel(new BorderLayout());
+    private final JPanel toolButtons = new JPanel(new GridLayout(0, 2, 2, 2));
+    private final JPanel toolOptions = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
+    private final JPanel colorBox = new JPanel(new BorderLayout(4, 2));
+    private final JPanel fgBgPanel = new JPanel(null);
+    private final JPanel fgSwatch = new JPanel();
+    private final JPanel bgSwatch = new JPanel();
+    private final Map<PaintTool, JToggleButton> toolButtonMap = new EnumMap<>(PaintTool.class);
+    private final ButtonGroup toolGroup = new ButtonGroup();
+
+    private JMenuItem undoItem;
+    private JMenuItem cutItem;
+    private JMenuItem copyItem;
+    private JMenuItem pasteItem;
+    private JMenuItem clearSelectionItem;
 
     public PaintFrame(final Paint paint, final Config config) {
         this.paint = paint;
@@ -43,26 +61,18 @@ public class PaintFrame extends JFrame {
         contentPane.setLayout(new BorderLayout());
 
         this.canvas = new PaintCanvas(this.paint);
+        this.canvas.putClientProperty("documentListener", (Runnable) this::onDocumentChanged);
+        this.canvas.putClientProperty("toolListener", (Runnable) this::syncToolButtons);
+        this.canvas.setStatusListener((x, y) -> this.coordsLabel.setText("  " + x + ", " + y + "  "));
         final JScrollPane scrollPane = new JScrollPane(this.canvas);
 
-        this.toolBox.setPreferredSize(new Dimension(56, 0));
-        this.toolBox.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
-        this.toolBox.setLayout(new GridLayout(0, 2, 2, 2));
-        // Placeholder tools — real tools land in later XP Paint feature work.
-        for (int i = 0; i < 16; i++) {
-            final JButton stub = new JButton();
-            stub.setEnabled(false);
-            stub.setPreferredSize(new Dimension(24, 24));
-            this.toolBox.add(stub);
-        }
-
-        this.colorBox.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-        this.colorBox.add(new JLabel("Colors"));
+        this.buildToolBox();
+        this.buildColorBox();
 
         this.statusBar.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         this.statusBar.add(this.statusLabel, BorderLayout.WEST);
+        this.statusBar.add(this.coordsLabel, BorderLayout.EAST);
 
-        // Classic shell: toolbox | canvas, color box + status under canvas.
         final JPanel south = new JPanel(new BorderLayout());
         south.add(this.colorBox, BorderLayout.CENTER);
         south.add(this.statusBar, BorderLayout.SOUTH);
@@ -75,6 +85,7 @@ public class PaintFrame extends JFrame {
         this.toolBoxMenuItem.addActionListener(e -> this.toolBox.setVisible(this.toolBoxMenuItem.isSelected()));
         this.colorBoxMenuItem.addActionListener(e -> this.colorBox.setVisible(this.colorBoxMenuItem.isSelected()));
         this.statusBarMenuItem.addActionListener(e -> this.statusBar.setVisible(this.statusBarMenuItem.isSelected()));
+        this.drawOpaqueMenuItem.addActionListener(e -> this.paint.setDrawOpaque(this.drawOpaqueMenuItem.isSelected()));
 
         this.addWindowListener(new WindowAdapter() {
             @Override
@@ -84,7 +95,160 @@ public class PaintFrame extends JFrame {
         });
 
         this.applyConfig();
+        this.syncToolButtons();
+        this.syncColorSwatches();
+        this.refreshToolOptions();
         this.refreshTitle();
+        this.updateEditMenuState();
+    }
+
+    private void buildToolBox() {
+        this.toolBox.setPreferredSize(new Dimension(64, 0));
+        this.toolBox.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        this.toolButtons.setOpaque(false);
+        for (final PaintTool tool : PaintTool.values()) {
+            final JToggleButton button = new JToggleButton(shortLabel(tool));
+            button.setToolTipText(tool.displayName());
+            button.setMargin(new Insets(1, 1, 1, 1));
+            button.setFocusable(false);
+            button.setFont(button.getFont().deriveFont(9f));
+            button.addActionListener(e -> {
+                this.paint.setTool(tool);
+                this.refreshToolOptions();
+                this.updateEditMenuState();
+                this.statusLabel.setText(" " + tool.displayName());
+            });
+            this.toolGroup.add(button);
+            this.toolButtonMap.put(tool, button);
+            this.toolButtons.add(button);
+        }
+        this.toolOptions.setPreferredSize(new Dimension(56, 72));
+        this.toolOptions.setBorder(BorderFactory.createEtchedBorder());
+        this.toolBox.add(this.toolButtons, BorderLayout.NORTH);
+        this.toolBox.add(this.toolOptions, BorderLayout.CENTER);
+    }
+
+    private static String shortLabel(final PaintTool tool) {
+        return switch (tool) {
+            case FREE_FORM_SELECT -> "FSel";
+            case SELECT -> "Sel";
+            case ERASER -> "Ers";
+            case FILL -> "Fill";
+            case PICK_COLOR -> "Pick";
+            case MAGNIFIER -> "Mag";
+            case PENCIL -> "Pen";
+            case BRUSH -> "Bru";
+            case AIRBRUSH -> "Air";
+            case TEXT -> "Txt";
+            case LINE -> "Line";
+            case CURVE -> "Crv";
+            case RECTANGLE -> "Rect";
+            case POLYGON -> "Poly";
+            case ELLIPSE -> "Ell";
+            case ROUNDED_RECTANGLE -> "RRec";
+        };
+    }
+
+    private void buildColorBox() {
+        this.colorBox.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        this.fgBgPanel.setPreferredSize(new Dimension(40, 40));
+        this.bgSwatch.setBounds(12, 12, 22, 22);
+        this.bgSwatch.setBorder(new LineBorder(Color.GRAY));
+        this.fgSwatch.setBounds(4, 4, 22, 22);
+        this.fgSwatch.setBorder(new LineBorder(Color.DARK_GRAY));
+        this.fgBgPanel.add(this.bgSwatch);
+        this.fgBgPanel.add(this.fgSwatch);
+
+        final JPanel swatches = new JPanel(new GridLayout(2, 14, 1, 1));
+        for (final Color color : ColorPalette.DEFAULT_COLORS) {
+            final JButton swatch = new JButton();
+            swatch.setPreferredSize(new Dimension(16, 16));
+            swatch.setBackground(color);
+            swatch.setOpaque(true);
+            swatch.setBorder(new LineBorder(Color.GRAY));
+            swatch.setFocusable(false);
+            swatch.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mousePressed(final java.awt.event.MouseEvent e) {
+                    if (SwingUtilities.isRightMouseButton(e)) {
+                        PaintFrame.this.paint.setBackground(color);
+                    } else {
+                        PaintFrame.this.paint.setForeground(color);
+                    }
+                    PaintFrame.this.syncColorSwatches();
+                }
+            });
+            swatches.add(swatch);
+        }
+        this.colorBox.add(this.fgBgPanel, BorderLayout.WEST);
+        this.colorBox.add(swatches, BorderLayout.CENTER);
+    }
+
+    private void refreshToolOptions() {
+        this.toolOptions.removeAll();
+        final PaintTool tool = this.paint.getTool();
+        switch (tool) {
+            case ERASER -> addSizeOptions(Paint.ERASER_SIZES, this.paint.getEraserSize(), this.paint::setEraserSize);
+            case BRUSH -> {
+                addSizeOptions(Paint.BRUSH_SIZES, this.paint.getBrushSize(), this.paint::setBrushSize);
+                for (final BrushShape shape : BrushShape.values()) {
+                    final JButton b = new JButton(shape.name().substring(0, 1));
+                    b.setMargin(new Insets(0, 2, 0, 2));
+                    b.setToolTipText(shape.name());
+                    b.addActionListener(e -> this.paint.setBrushShape(shape));
+                    this.toolOptions.add(b);
+                }
+            }
+            case AIRBRUSH ->
+                    addSizeOptions(Paint.AIRBRUSH_RADII, this.paint.getAirbrushRadius(), this.paint::setAirbrushRadius);
+            case LINE, CURVE ->
+                    addSizeOptions(Paint.LINE_WIDTHS, this.paint.getLineWidth(), this.paint::setLineWidth);
+            case RECTANGLE, POLYGON, ELLIPSE, ROUNDED_RECTANGLE -> {
+                addSizeOptions(Paint.LINE_WIDTHS, this.paint.getLineWidth(), this.paint::setLineWidth);
+                for (final FillStyle style : FillStyle.values()) {
+                    final JButton b = new JButton(switch (style) {
+                        case OUTLINE -> "□";
+                        case OUTLINE_FILL -> "▣";
+                        case FILL -> "■";
+                    });
+                    b.setMargin(new Insets(0, 2, 0, 2));
+                    b.setToolTipText(style.name());
+                    b.addActionListener(e -> this.paint.setFillStyle(style));
+                    this.toolOptions.add(b);
+                }
+            }
+            case MAGNIFIER -> {
+                for (final int z : Paint.ZOOM_LEVELS) {
+                    final JButton b = new JButton(z + "x");
+                    b.setMargin(new Insets(0, 2, 0, 2));
+                    b.addActionListener(e -> {
+                        this.paint.setZoom(z);
+                        this.canvas.syncPreferredSize();
+                        this.canvas.revalidate();
+                        this.canvas.repaint();
+                    });
+                    this.toolOptions.add(b);
+                }
+            }
+            default -> this.toolOptions.add(new JLabel(" "));
+        }
+        this.toolOptions.revalidate();
+        this.toolOptions.repaint();
+    }
+
+    private void addSizeOptions(final int[] sizes, final int current, final java.util.function.IntConsumer setter) {
+        for (final int size : sizes) {
+            final JButton b = new JButton(String.valueOf(size));
+            b.setMargin(new Insets(0, 2, 0, 2));
+            if (size == current) {
+                b.setEnabled(false);
+            }
+            b.addActionListener(e -> {
+                setter.accept(size);
+                this.refreshToolOptions();
+            });
+            this.toolOptions.add(b);
+        }
     }
 
     private JMenuBar createMenuBar() {
@@ -126,11 +290,6 @@ public class PaintFrame extends JFrame {
         fileMenu.add(disabledItem("Page Setup...", KeyEvent.VK_U));
         fileMenu.add(disabledItem("Print...", KeyEvent.VK_P));
         fileMenu.addSeparator();
-        fileMenu.add(disabledItem("Send...", KeyEvent.VK_E));
-        fileMenu.addSeparator();
-        fileMenu.add(disabledItem("Set As Wallpaper (Tiled)", 0));
-        fileMenu.add(disabledItem("Set As Wallpaper (Centered)", 0));
-        fileMenu.addSeparator();
 
         final JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
         exitItem.addActionListener(e -> this.exit());
@@ -141,17 +300,72 @@ public class PaintFrame extends JFrame {
     private JMenu createEditMenu() {
         final JMenu editMenu = new JMenu("Edit");
         editMenu.setMnemonic(KeyEvent.VK_E);
-        editMenu.add(disabledItem("Undo", KeyEvent.VK_U));
-        editMenu.add(disabledItem("Repeat", KeyEvent.VK_R));
+
+        this.undoItem = new JMenuItem("Undo", KeyEvent.VK_U);
+        this.undoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
+        this.undoItem.addActionListener(e -> {
+            this.paint.undo();
+            this.refreshCanvas();
+        });
+
+        final JMenuItem repeatItem = disabledItem("Repeat", KeyEvent.VK_R);
+
+        this.cutItem = new JMenuItem("Cut", KeyEvent.VK_T);
+        this.cutItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK));
+        this.cutItem.addActionListener(e -> {
+            this.paint.cutSelection();
+            this.refreshCanvas();
+        });
+
+        this.copyItem = new JMenuItem("Copy", KeyEvent.VK_C);
+        this.copyItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK));
+        this.copyItem.addActionListener(e -> {
+            this.paint.copySelection();
+            this.updateEditMenuState();
+        });
+
+        this.pasteItem = new JMenuItem("Paste", KeyEvent.VK_P);
+        this.pasteItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK));
+        this.pasteItem.addActionListener(e -> {
+            this.paint.pasteClipboard();
+            this.paint.setTool(PaintTool.SELECT);
+            this.syncToolButtons();
+            this.refreshCanvas();
+        });
+
+        this.clearSelectionItem = new JMenuItem("Clear Selection", KeyEvent.VK_L);
+        this.clearSelectionItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
+        this.clearSelectionItem.addActionListener(e -> {
+            this.paint.clearSelection();
+            this.refreshCanvas();
+        });
+
+        final JMenuItem selectAllItem = new JMenuItem("Select All", KeyEvent.VK_A);
+        selectAllItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
+        selectAllItem.addActionListener(e -> {
+            this.paint.selectAll();
+            this.paint.setTool(PaintTool.SELECT);
+            this.syncToolButtons();
+            this.refreshCanvas();
+        });
+
+        final JMenuItem copyToItem = new JMenuItem("Copy To...");
+        copyToItem.addActionListener(e -> this.copyTo());
+
+        final JMenuItem pasteFromItem = new JMenuItem("Paste From...");
+        pasteFromItem.addActionListener(e -> this.pasteFrom());
+
+        editMenu.add(this.undoItem);
+        editMenu.add(repeatItem);
         editMenu.addSeparator();
-        editMenu.add(disabledItem("Cut", KeyEvent.VK_T));
-        editMenu.add(disabledItem("Copy", KeyEvent.VK_C));
-        editMenu.add(disabledItem("Paste", KeyEvent.VK_P));
-        editMenu.add(disabledItem("Clear Selection", KeyEvent.VK_L));
-        editMenu.add(disabledItem("Select All", KeyEvent.VK_A));
+        editMenu.add(this.cutItem);
+        editMenu.add(this.copyItem);
+        editMenu.add(this.pasteItem);
+        editMenu.add(this.clearSelectionItem);
+        editMenu.add(selectAllItem);
         editMenu.addSeparator();
-        editMenu.add(disabledItem("Copy To...", 0));
-        editMenu.add(disabledItem("Paste From...", 0));
+        editMenu.add(copyToItem);
+        editMenu.add(pasteFromItem);
         return editMenu;
     }
 
@@ -165,8 +379,24 @@ public class PaintFrame extends JFrame {
         viewMenu.add(this.colorBoxMenuItem);
         viewMenu.add(this.statusBarMenuItem);
         viewMenu.addSeparator();
-        viewMenu.add(disabledItem("Zoom", KeyEvent.VK_Z));
-        viewMenu.add(disabledItem("View Bitmap", KeyEvent.VK_V));
+
+        final JMenu zoomMenu = new JMenu("Zoom");
+        zoomMenu.setMnemonic(KeyEvent.VK_Z);
+        for (final int z : Paint.ZOOM_LEVELS) {
+            final JMenuItem item = new JMenuItem(z == 1 ? "Normal Size" : (z + "x"));
+            item.addActionListener(e -> {
+                this.paint.setZoom(z);
+                this.canvas.syncPreferredSize();
+                this.canvas.revalidate();
+                this.canvas.repaint();
+            });
+            zoomMenu.add(item);
+        }
+        viewMenu.add(zoomMenu);
+
+        final JMenuItem viewBitmap = new JMenuItem("View Bitmap", KeyEvent.VK_V);
+        viewBitmap.addActionListener(e -> this.viewBitmap());
+        viewMenu.add(viewBitmap);
         viewMenu.addSeparator();
         viewMenu.add(disabledItem("Text Toolbar", 0));
         return viewMenu;
@@ -175,32 +405,55 @@ public class PaintFrame extends JFrame {
     private JMenu createImageMenu() {
         final JMenu imageMenu = new JMenu("Image");
         imageMenu.setMnemonic(KeyEvent.VK_I);
-        imageMenu.add(disabledItem("Flip/Rotate...", KeyEvent.VK_F));
-        imageMenu.add(disabledItem("Stretch/Skew...", KeyEvent.VK_S));
-        imageMenu.add(disabledItem("Invert Colors", KeyEvent.VK_I));
-        imageMenu.add(disabledItem("Attributes...", KeyEvent.VK_A));
+
+        final JMenuItem flipRotate = new JMenuItem("Flip/Rotate...", KeyEvent.VK_F);
+        flipRotate.addActionListener(e -> this.flipRotate());
+
+        final JMenuItem stretchSkew = new JMenuItem("Stretch/Skew...", KeyEvent.VK_S);
+        stretchSkew.addActionListener(e -> this.stretchSkew());
+
+        final JMenuItem invert = new JMenuItem("Invert Colors", KeyEvent.VK_I);
+        invert.addActionListener(e -> {
+            this.paint.invertColors();
+            this.refreshCanvas();
+        });
+
+        final JMenuItem attributes = new JMenuItem("Attributes...", KeyEvent.VK_A);
+        attributes.addActionListener(e -> this.attributes());
 
         final JMenuItem clearItem = new JMenuItem("Clear Image", KeyEvent.VK_C);
         clearItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_N, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
         clearItem.addActionListener(e -> this.clearImage());
-        imageMenu.add(clearItem);
 
-        imageMenu.add(disabledItem("Draw Opaque", KeyEvent.VK_D));
+        this.drawOpaqueMenuItem.setMnemonic(KeyEvent.VK_D);
+
+        imageMenu.add(flipRotate);
+        imageMenu.add(stretchSkew);
+        imageMenu.add(invert);
+        imageMenu.add(attributes);
+        imageMenu.add(clearItem);
+        imageMenu.add(this.drawOpaqueMenuItem);
         return imageMenu;
     }
 
     private JMenu createColorsMenu() {
         final JMenu colorsMenu = new JMenu("Colors");
         colorsMenu.setMnemonic(KeyEvent.VK_C);
-        colorsMenu.add(disabledItem("Edit Colors...", KeyEvent.VK_E));
+        final JMenuItem editColors = new JMenuItem("Edit Colors...", KeyEvent.VK_E);
+        editColors.addActionListener(e -> {
+            final Color chosen = JColorChooser.showDialog(this, "Edit Colors", this.paint.getForeground());
+            if (Objects.nonNull(chosen)) {
+                this.paint.setForeground(chosen);
+                this.syncColorSwatches();
+            }
+        });
+        colorsMenu.add(editColors);
         return colorsMenu;
     }
 
     private JMenu createHelpMenu() {
         final JMenu helpMenu = new JMenu("Help");
         helpMenu.setMnemonic(KeyEvent.VK_H);
-        helpMenu.add(disabledItem("Help Topics", KeyEvent.VK_H));
-        helpMenu.addSeparator();
 
         final JMenuItem aboutItem = new JMenuItem("About Paint", KeyEvent.VK_A);
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
@@ -227,10 +480,7 @@ public class PaintFrame extends JFrame {
             return;
         }
         this.paint.createNew();
-        this.canvas.syncPreferredSize();
-        this.canvas.revalidate();
-        this.canvas.repaint();
-        this.refreshTitle();
+        this.refreshCanvas();
     }
 
     private void open() {
@@ -244,17 +494,9 @@ public class PaintFrame extends JFrame {
         try {
             final Path path = Paths.get(chooser.getSelectedFile().toURI());
             this.paint.open(path);
-            this.canvas.syncPreferredSize();
-            this.canvas.revalidate();
-            this.canvas.repaint();
-            this.refreshTitle();
+            this.refreshCanvas();
         } catch (final IOException e) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Could not open image.\n" + e.getMessage(),
-                    TITLE,
-                    JOptionPane.ERROR_MESSAGE
-            );
+            showError("Could not open image.\n" + e.getMessage());
         }
     }
 
@@ -267,12 +509,7 @@ public class PaintFrame extends JFrame {
             this.paint.save(this.paint.getPath());
             this.refreshTitle();
         } catch (final IOException e) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Could not save image.\n" + e.getMessage(),
-                    TITLE,
-                    JOptionPane.ERROR_MESSAGE
-            );
+            showError("Could not save image.\n" + e.getMessage());
         }
     }
 
@@ -289,19 +526,141 @@ public class PaintFrame extends JFrame {
             this.paint.save(path);
             this.refreshTitle();
         } catch (final IOException e) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Could not save image.\n" + e.getMessage(),
-                    TITLE,
-                    JOptionPane.ERROR_MESSAGE
-            );
+            showError("Could not save image.\n" + e.getMessage());
+        }
+    }
+
+    private void copyTo() {
+        if (!this.paint.getSelection().isActive()) {
+            return;
+        }
+        final JFileChooser chooser = imageFileChooser();
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path path = Paths.get(chooser.getSelectedFile().toURI());
+        if (!path.getFileName().toString().contains(".")) {
+            path = path.resolveSibling(path.getFileName() + ".png");
+        }
+        try {
+            this.paint.copySelectionTo(path);
+        } catch (final IOException e) {
+            showError("Could not copy selection.\n" + e.getMessage());
+        }
+    }
+
+    private void pasteFrom() {
+        final JFileChooser chooser = imageFileChooser();
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        try {
+            this.paint.pasteFrom(Paths.get(chooser.getSelectedFile().toURI()));
+            this.paint.setTool(PaintTool.SELECT);
+            this.syncToolButtons();
+            this.refreshCanvas();
+        } catch (final IOException e) {
+            showError("Could not paste from file.\n" + e.getMessage());
         }
     }
 
     private void clearImage() {
         this.paint.clearImage();
-        this.canvas.repaint();
-        this.refreshTitle();
+        this.refreshCanvas();
+    }
+
+    private void flipRotate() {
+        final String[] options = {
+                "Flip horizontal", "Flip vertical",
+                "Rotate 90°", "Rotate 180°", "Rotate 270°"
+        };
+        final String choice = (String) JOptionPane.showInputDialog(
+                this, "Flip or rotate:", "Flip/Rotate",
+                JOptionPane.QUESTION_MESSAGE, null, options, options[0]
+        );
+        if (Objects.isNull(choice)) {
+            return;
+        }
+        switch (choice) {
+            case "Flip horizontal" -> this.paint.flipHorizontal();
+            case "Flip vertical" -> this.paint.flipVertical();
+            case "Rotate 90°" -> this.paint.rotate90();
+            case "Rotate 180°" -> this.paint.rotate180();
+            case "Rotate 270°" -> this.paint.rotate270();
+            default -> {
+            }
+        }
+        this.refreshCanvas();
+    }
+
+    private void stretchSkew() {
+        final JPanel panel = new JPanel(new GridLayout(0, 2, 4, 4));
+        final JTextField hStretch = new JTextField("100");
+        final JTextField vStretch = new JTextField("100");
+        final JTextField hSkew = new JTextField("0");
+        final JTextField vSkew = new JTextField("0");
+        panel.add(new JLabel("Stretch horizontal %"));
+        panel.add(hStretch);
+        panel.add(new JLabel("Stretch vertical %"));
+        panel.add(vStretch);
+        panel.add(new JLabel("Skew horizontal °"));
+        panel.add(hSkew);
+        panel.add(new JLabel("Skew vertical °"));
+        panel.add(vSkew);
+        final int result = JOptionPane.showConfirmDialog(
+                this, panel, "Stretch/Skew", JOptionPane.OK_CANCEL_OPTION
+        );
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+        try {
+            final int hs = Integer.parseInt(hStretch.getText().trim());
+            final int vs = Integer.parseInt(vStretch.getText().trim());
+            final int hk = Integer.parseInt(hSkew.getText().trim());
+            final int vk = Integer.parseInt(vSkew.getText().trim());
+            if (hs != 100 || vs != 100) {
+                this.paint.stretch(hs, vs);
+            }
+            if (hk != 0 || vk != 0) {
+                this.paint.skew(hk, vk);
+            }
+            this.refreshCanvas();
+        } catch (final NumberFormatException ex) {
+            showError("Enter whole numbers for stretch/skew.");
+        }
+    }
+
+    private void attributes() {
+        final JPanel panel = new JPanel(new GridLayout(0, 2, 4, 4));
+        final JTextField widthField = new JTextField(String.valueOf(this.paint.getWidth()));
+        final JTextField heightField = new JTextField(String.valueOf(this.paint.getHeight()));
+        panel.add(new JLabel("Width (pixels)"));
+        panel.add(widthField);
+        panel.add(new JLabel("Height (pixels)"));
+        panel.add(heightField);
+        final int result = JOptionPane.showConfirmDialog(
+                this, panel, "Attributes", JOptionPane.OK_CANCEL_OPTION
+        );
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+        try {
+            final int w = Integer.parseInt(widthField.getText().trim());
+            final int h = Integer.parseInt(heightField.getText().trim());
+            this.paint.attributes(w, h);
+            this.refreshCanvas();
+        } catch (final IllegalArgumentException ex) {
+            showError("Width and height must be positive integers.");
+        }
+    }
+
+    private void viewBitmap() {
+        final JDialog dialog = new JDialog(this, "View Bitmap", true);
+        final JLabel label = new JLabel(new ImageIcon(this.paint.getImage()));
+        dialog.add(new JScrollPane(label));
+        dialog.setSize(Math.min(800, this.paint.getWidth() + 40), Math.min(600, this.paint.getHeight() + 60));
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
     private void exit() {
@@ -309,6 +668,7 @@ public class PaintFrame extends JFrame {
             return;
         }
         this.dispose();
+        System.exit(0);
     }
 
     private boolean confirmDiscardIfNeeded() {
@@ -335,6 +695,45 @@ public class PaintFrame extends JFrame {
         return true;
     }
 
+    private void onDocumentChanged() {
+        this.refreshTitle();
+        this.updateEditMenuState();
+        this.syncColorSwatches();
+    }
+
+    private void refreshCanvas() {
+        this.canvas.notifyDocumentChanged();
+        this.refreshTitle();
+        this.updateEditMenuState();
+    }
+
+    private void syncToolButtons() {
+        final JToggleButton button = this.toolButtonMap.get(this.paint.getTool());
+        if (Objects.nonNull(button)) {
+            button.setSelected(true);
+        }
+        this.refreshToolOptions();
+    }
+
+    private void syncColorSwatches() {
+        this.fgSwatch.setBackground(this.paint.getForeground());
+        this.bgSwatch.setBackground(this.paint.getBackground());
+        this.fgSwatch.repaint();
+        this.bgSwatch.repaint();
+    }
+
+    private void updateEditMenuState() {
+        if (Objects.isNull(this.undoItem)) {
+            return;
+        }
+        this.undoItem.setEnabled(this.paint.canUndo());
+        final boolean hasSel = this.paint.getSelection().isActive();
+        this.cutItem.setEnabled(hasSel);
+        this.copyItem.setEnabled(hasSel);
+        this.clearSelectionItem.setEnabled(hasSel);
+        this.pasteItem.setEnabled(Objects.nonNull(this.paint.getClipboard()));
+    }
+
     private void refreshTitle() {
         final String name = Objects.isNull(this.paint.getPath())
                 ? UNTITLED
@@ -344,7 +743,6 @@ public class PaintFrame extends JFrame {
     }
 
     private void applyConfig() {
-        // Reserved for window size / last path / UI toggles (like Notepad).
         final String w = this.config.get("window.width");
         final String h = this.config.get("window.height");
         if (Objects.nonNull(w) && Objects.nonNull(h)) {
@@ -356,17 +754,22 @@ public class PaintFrame extends JFrame {
         }
     }
 
+    private void showError(final String message) {
+        JOptionPane.showMessageDialog(this, message, TITLE, JOptionPane.ERROR_MESSAGE);
+    }
+
     private static JFileChooser imageFileChooser() {
         final JFileChooser chooser = new JFileChooser();
         chooser.setAcceptAllFileFilterUsed(true);
         chooser.addChoosableFileFilter(new FileNameExtensionFilter(
-                "Image Files (*.png, *.jpg, *.bmp, *.gif)",
-                "png", "jpg", "jpeg", "bmp", "gif"
+                "Image Files (*.png, *.jpg, *.bmp, *.gif, *.tif)",
+                "png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff"
         ));
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("PNG (*.png)", "png"));
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("JPEG (*.jpg;*.jpeg)", "jpg", "jpeg"));
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("Bitmap (*.bmp)", "bmp"));
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("GIF (*.gif)", "gif"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("TIFF (*.tif;*.tiff)", "tif", "tiff"));
         return chooser;
     }
 }
