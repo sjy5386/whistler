@@ -1,21 +1,36 @@
 plugins {
     id 'java'
-    id "io.freefair.lombok" version "6.6.2"
+    id 'application'
+    id 'io.freefair.lombok' version '9.1.0'
 }
 
-group 'com.sysbot32.whistler'
-version '1.0-SNAPSHOT'
+group = 'com.sysbot32.whistler'
+version = '1.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
 
 repositories {
     mavenCentral()
 }
 
-dependencies {
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
+application {
+    mainClass = 'com.sysbot32.whistler.Main'
+}
 
-    implementation group: 'ch.qos.logback', name: 'logback-classic', version: '1.5.6'
+dependencies {
+    implementation 'ch.qos.logback:logback-classic:1.5.6'
     implementation 'com.rover12421.opensource:JFontChooser:1.0.5-3'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }
 
 test {
