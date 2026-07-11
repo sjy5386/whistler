@@ -10,6 +10,9 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.print.PageFormat;
+import java.awt.print.PrinterException;
+import java.awt.print.PrinterJob;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,6 +36,7 @@ public class PaintFrame extends JFrame {
     private final JCheckBoxMenuItem toolBoxMenuItem = new JCheckBoxMenuItem("Tool Box", true);
     private final JCheckBoxMenuItem colorBoxMenuItem = new JCheckBoxMenuItem("Color Box", true);
     private final JCheckBoxMenuItem statusBarMenuItem = new JCheckBoxMenuItem("Status Bar", true);
+    private final JCheckBoxMenuItem textToolbarMenuItem = new JCheckBoxMenuItem("Text Toolbar", false);
     private final JCheckBoxMenuItem drawOpaqueMenuItem = new JCheckBoxMenuItem("Draw Opaque", true);
     private final JPanel toolBox = new JPanel(new BorderLayout());
     private final JPanel toolButtons = new JPanel(new GridLayout(0, 2, 2, 2));
@@ -43,8 +47,11 @@ public class PaintFrame extends JFrame {
     private final JPanel bgSwatch = new JPanel();
     private final Map<PaintTool, JToggleButton> toolButtonMap = new EnumMap<>(PaintTool.class);
     private final ButtonGroup toolGroup = new ButtonGroup();
+    private final TextToolbar textToolbar;
+    private PageFormat pageFormat = PrinterJob.getPrinterJob().defaultPage();
 
     private JMenuItem undoItem;
+    private JMenuItem repeatItem;
     private JMenuItem cutItem;
     private JMenuItem copyItem;
     private JMenuItem pasteItem;
@@ -53,6 +60,11 @@ public class PaintFrame extends JFrame {
     public PaintFrame(final Paint paint, final Config config) {
         this.paint = paint;
         this.config = config;
+        this.textToolbar = new TextToolbar(this, this.paint.getTextFont());
+        this.textToolbar.setFontListener(font -> {
+            this.paint.setTextFont(font);
+            this.statusLabel.setText(" Font: " + font.getFamily() + " " + font.getSize());
+        });
 
         this.setSize(800, 600);
         this.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -85,6 +97,7 @@ public class PaintFrame extends JFrame {
         this.toolBoxMenuItem.addActionListener(e -> this.toolBox.setVisible(this.toolBoxMenuItem.isSelected()));
         this.colorBoxMenuItem.addActionListener(e -> this.colorBox.setVisible(this.colorBoxMenuItem.isSelected()));
         this.statusBarMenuItem.addActionListener(e -> this.statusBar.setVisible(this.statusBarMenuItem.isSelected()));
+        this.textToolbarMenuItem.addActionListener(e -> this.updateTextToolbarVisibility());
         this.drawOpaqueMenuItem.addActionListener(e -> this.paint.setDrawOpaque(this.drawOpaqueMenuItem.isSelected()));
 
         this.addWindowListener(new WindowAdapter() {
@@ -118,6 +131,7 @@ public class PaintFrame extends JFrame {
                 this.paint.setTool(tool);
                 this.refreshToolOptions();
                 this.updateEditMenuState();
+                this.updateTextToolbarVisibility();
                 this.statusLabel.setText(" " + tool.displayName());
             });
             this.toolGroup.add(button);
@@ -274,14 +288,24 @@ public class PaintFrame extends JFrame {
         final JMenuItem saveAsItem = new JMenuItem("Save As...", KeyEvent.VK_A);
         saveAsItem.addActionListener(e -> this.saveAs());
 
+        final JMenuItem printPreviewItem = new JMenuItem("Print Preview", KeyEvent.VK_V);
+        printPreviewItem.addActionListener(e -> this.printPreview());
+
+        final JMenuItem pageSetupItem = new JMenuItem("Page Setup...", KeyEvent.VK_U);
+        pageSetupItem.addActionListener(e -> this.pageSetup());
+
+        final JMenuItem printItem = new JMenuItem("Print...", KeyEvent.VK_P);
+        printItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
+        printItem.addActionListener(e -> this.printDocument());
+
         fileMenu.add(newItem);
         fileMenu.add(openItem);
         fileMenu.add(saveItem);
         fileMenu.add(saveAsItem);
         fileMenu.addSeparator();
-        fileMenu.add(disabledItem("Print Preview", KeyEvent.VK_V));
-        fileMenu.add(disabledItem("Page Setup...", KeyEvent.VK_U));
-        fileMenu.add(disabledItem("Print...", KeyEvent.VK_P));
+        fileMenu.add(printPreviewItem);
+        fileMenu.add(pageSetupItem);
+        fileMenu.add(printItem);
         fileMenu.addSeparator();
 
         final JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
@@ -301,7 +325,12 @@ public class PaintFrame extends JFrame {
             this.refreshCanvas();
         });
 
-        final JMenuItem repeatItem = disabledItem("Repeat", KeyEvent.VK_R);
+        this.repeatItem = new JMenuItem("Repeat", KeyEvent.VK_R);
+        this.repeatItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK));
+        this.repeatItem.addActionListener(e -> {
+            this.paint.repeat();
+            this.refreshCanvas();
+        });
 
         this.cutItem = new JMenuItem("Cut", KeyEvent.VK_T);
         this.cutItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK));
@@ -349,7 +378,7 @@ public class PaintFrame extends JFrame {
         pasteFromItem.addActionListener(e -> this.pasteFrom());
 
         editMenu.add(this.undoItem);
-        editMenu.add(repeatItem);
+        editMenu.add(this.repeatItem);
         editMenu.addSeparator();
         editMenu.add(this.cutItem);
         editMenu.add(this.copyItem);
@@ -391,7 +420,8 @@ public class PaintFrame extends JFrame {
         viewBitmap.addActionListener(e -> this.viewBitmap());
         viewMenu.add(viewBitmap);
         viewMenu.addSeparator();
-        viewMenu.add(disabledItem("Text Toolbar", 0));
+        this.textToolbarMenuItem.setMnemonic(KeyEvent.VK_E);
+        viewMenu.add(this.textToolbarMenuItem);
         return viewMenu;
     }
 
@@ -459,13 +489,54 @@ public class PaintFrame extends JFrame {
         return helpMenu;
     }
 
-    private static JMenuItem disabledItem(final String text, final int mnemonic) {
-        final JMenuItem item = new JMenuItem(text);
-        if (mnemonic != 0) {
-            item.setMnemonic(mnemonic);
+    private void printPreview() {
+        this.paint.commitSelectionIfAny();
+        final PrintPreviewDialog dialog = new PrintPreviewDialog(
+                this,
+                this.paint.getImage(),
+                this.pageFormat
+        );
+        dialog.setVisible(true);
+    }
+
+    private void pageSetup() {
+        final PrinterJob job = PrinterJob.getPrinterJob();
+        this.pageFormat = job.pageDialog(this.pageFormat);
+    }
+
+    private void printDocument() {
+        this.paint.commitSelectionIfAny();
+        final PrinterJob job = PrinterJob.getPrinterJob();
+        job.setJobName(Objects.isNull(this.paint.getPath())
+                ? UNTITLED
+                : this.paint.getPath().getFileName().toString());
+        job.setPrintable(new ImagePrintSupport(this.paint.getImage()), this.pageFormat);
+        if (!job.printDialog()) {
+            return;
         }
-        item.setEnabled(false);
-        return item;
+        try {
+            job.print();
+        } catch (final PrinterException ex) {
+            showError("Could not print.\n" + ex.getMessage());
+        }
+    }
+
+    private void updateTextToolbarVisibility() {
+        final boolean show = this.textToolbarMenuItem.isSelected()
+                || this.paint.getTool() == PaintTool.TEXT;
+        if (show) {
+            this.textToolbar.syncFrom(this.paint.getTextFont());
+            if (!this.textToolbar.isVisible()) {
+                this.textToolbar.setLocationRelativeTo(this);
+            }
+            this.textToolbar.setVisible(true);
+            // Keep checkbox in sync when auto-shown for the Text tool.
+            if (this.paint.getTool() == PaintTool.TEXT && !this.textToolbarMenuItem.isSelected()) {
+                this.textToolbarMenuItem.setSelected(true);
+            }
+        } else {
+            this.textToolbar.setVisible(false);
+        }
     }
 
     private void newDocument() {
@@ -660,6 +731,7 @@ public class PaintFrame extends JFrame {
         if (!this.confirmDiscardIfNeeded()) {
             return;
         }
+        this.textToolbar.dispose();
         this.dispose();
         System.exit(0);
     }
@@ -706,6 +778,7 @@ public class PaintFrame extends JFrame {
             button.setSelected(true);
         }
         this.refreshToolOptions();
+        this.updateTextToolbarVisibility();
     }
 
     private void syncColorSwatches() {
@@ -720,6 +793,9 @@ public class PaintFrame extends JFrame {
             return;
         }
         this.undoItem.setEnabled(this.paint.canUndo());
+        if (Objects.nonNull(this.repeatItem)) {
+            this.repeatItem.setEnabled(this.paint.canRepeat());
+        }
         final boolean hasSel = this.paint.getSelection().isActive();
         this.cutItem.setEnabled(hasSel);
         this.copyItem.setEnabled(hasSel);

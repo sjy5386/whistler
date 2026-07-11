@@ -215,6 +215,37 @@ class PaintTest {
     }
 
     @Test
+    void repeatRedoesLastUndo() {
+        final Paint paint = new Paint(12, 12);
+        paint.pushUndo();
+        paint.strokePencil(0, 0, 5, 0, false);
+        final int drawn = paint.getImage().getRGB(3, 0);
+        assertEquals(Color.BLACK.getRGB(), drawn);
+        assertFalse(paint.canRepeat());
+
+        paint.undo();
+        assertEquals(Color.WHITE.getRGB(), paint.getImage().getRGB(3, 0));
+        assertTrue(paint.canRepeat());
+
+        paint.repeat();
+        assertEquals(Color.BLACK.getRGB(), paint.getImage().getRGB(3, 0));
+        assertFalse(paint.canRepeat());
+        assertTrue(paint.canUndo());
+    }
+
+    @Test
+    void newEditClearsRepeatTrail() {
+        final Paint paint = new Paint(10, 10);
+        paint.pushUndo();
+        paint.strokePencil(0, 0, 4, 0, false);
+        paint.undo();
+        assertTrue(paint.canRepeat());
+        paint.pushUndo();
+        paint.strokePencil(0, 5, 4, 5, false);
+        assertFalse(paint.canRepeat());
+    }
+
+    @Test
     void rectangularSelectionCutCopyPasteAndClear() {
         final Paint paint = new Paint(30, 30);
         paint.setForeground(Color.RED);

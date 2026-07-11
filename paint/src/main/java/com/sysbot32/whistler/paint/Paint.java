@@ -49,6 +49,7 @@ public class Paint {
     private BufferedImage clipboard;
 
     private final Deque<BufferedImage> undoStack = new ArrayDeque<>();
+    private final Deque<BufferedImage> redoStack = new ArrayDeque<>();
     private PaintTool toolBeforePick = PaintTool.PENCIL;
 
     public Paint() {
@@ -73,6 +74,7 @@ public class Paint {
         this.edited = false;
         this.selection.clear();
         this.undoStack.clear();
+        this.redoStack.clear();
     }
 
     public void createNew(final int width, final int height) {
@@ -81,6 +83,7 @@ public class Paint {
         this.edited = false;
         this.selection.clear();
         this.undoStack.clear();
+        this.redoStack.clear();
     }
 
     public void setEdited(final boolean edited) {
@@ -158,10 +161,16 @@ public class Paint {
         while (this.undoStack.size() > MAX_UNDO) {
             this.undoStack.removeLast();
         }
+        // A new edit invalidates the classic Repeat/redo trail.
+        this.redoStack.clear();
     }
 
     public boolean canUndo() {
         return !this.undoStack.isEmpty();
+    }
+
+    public boolean canRepeat() {
+        return !this.redoStack.isEmpty();
     }
 
     public void undo() {
@@ -169,7 +178,27 @@ public class Paint {
             return;
         }
         this.selection.clear();
+        this.redoStack.addFirst(BitmapOps.copyOf(this.image));
+        while (this.redoStack.size() > MAX_UNDO) {
+            this.redoStack.removeLast();
+        }
         this.image = this.undoStack.removeFirst();
+        this.edited = true;
+    }
+
+    /**
+     * Classic Paint "Repeat" — redo the last undone change when available.
+     */
+    public void repeat() {
+        if (this.redoStack.isEmpty()) {
+            return;
+        }
+        this.selection.clear();
+        this.undoStack.addFirst(BitmapOps.copyOf(this.image));
+        while (this.undoStack.size() > MAX_UNDO) {
+            this.undoStack.removeLast();
+        }
+        this.image = this.redoStack.removeFirst();
         this.edited = true;
     }
 
@@ -180,6 +209,7 @@ public class Paint {
         }
         this.selection.clear();
         this.undoStack.clear();
+        this.redoStack.clear();
         this.image = toArgb(loaded);
         this.path = path;
         this.edited = false;

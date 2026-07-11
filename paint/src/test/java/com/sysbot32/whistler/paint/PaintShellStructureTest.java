@@ -50,6 +50,12 @@ class PaintShellStructureTest {
         assertTrue(source.contains("fgSwatch"));
         assertTrue(source.contains("bgSwatch"));
         assertTrue(source.contains("PaintTool.values()"));
+        assertTrue(source.contains("printPreview"));
+        assertTrue(source.contains("pageSetup"));
+        assertTrue(source.contains("printDocument"));
+        assertTrue(source.contains("repeatItem"));
+        assertTrue(source.contains("textToolbarMenuItem"));
+        assertTrue(!source.contains("disabledItem("));
     }
 
     @Test
