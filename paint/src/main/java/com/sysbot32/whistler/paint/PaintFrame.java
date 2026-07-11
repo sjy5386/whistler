@@ -140,14 +140,23 @@ public class PaintFrame extends JFrame {
         this.fgBgPanel.add(this.bgSwatch);
         this.fgBgPanel.add(this.fgSwatch);
 
-        final JPanel swatches = new JPanel(new GridLayout(2, 14, 1, 1));
+        // Fixed square cells (GridLayout stretches in CENTER; keep a fixed preferred size).
+        final int cell = 16;
+        final int gap = 1;
+        final int cols = 14;
+        final int rows = 2;
+        final JPanel swatches = new JPanel(new GridLayout(rows, cols, gap, gap));
+        swatches.setPreferredSize(new Dimension(
+                cols * cell + (cols - 1) * gap,
+                rows * cell + (rows - 1) * gap
+        ));
+        swatches.setMaximumSize(swatches.getPreferredSize());
         for (final Color color : ColorPalette.DEFAULT_COLORS) {
-            final JButton swatch = new JButton();
-            swatch.setPreferredSize(new Dimension(16, 16));
+            final JPanel swatch = new JPanel();
             swatch.setBackground(color);
             swatch.setOpaque(true);
             swatch.setBorder(new LineBorder(Color.GRAY));
-            swatch.setFocusable(false);
+            swatch.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             swatch.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mousePressed(final java.awt.event.MouseEvent e) {
@@ -161,8 +170,11 @@ public class PaintFrame extends JFrame {
             });
             swatches.add(swatch);
         }
+        final JPanel swatchesHolder = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+        swatchesHolder.setOpaque(false);
+        swatchesHolder.add(swatches);
         this.colorBox.add(this.fgBgPanel, BorderLayout.WEST);
-        this.colorBox.add(swatches, BorderLayout.CENTER);
+        this.colorBox.add(swatchesHolder, BorderLayout.CENTER);
     }
 
     private void refreshToolOptions() {
