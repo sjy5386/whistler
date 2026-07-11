@@ -60,11 +60,6 @@ public class PaintFrame extends JFrame {
     public PaintFrame(final Paint paint, final Config config) {
         this.paint = paint;
         this.config = config;
-        this.textToolbar = new TextToolbar(this, this.paint.getTextFont());
-        this.textToolbar.setFontListener(font -> {
-            this.paint.setTextFont(font);
-            this.statusLabel.setText(" Font: " + font.getFamily() + " " + font.getSize());
-        });
 
         this.setSize(800, 600);
         this.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -77,6 +72,13 @@ public class PaintFrame extends JFrame {
         this.canvas.putClientProperty("toolListener", (Runnable) this::syncToolButtons);
         this.canvas.setStatusListener((x, y) -> this.coordsLabel.setText("  " + x + ", " + y + "  "));
         final JScrollPane scrollPane = new JScrollPane(this.canvas);
+
+        this.textToolbar = new TextToolbar(this, this.paint.getTextFont());
+        this.textToolbar.setFontListener(font -> {
+            this.paint.setTextFont(font);
+            this.canvas.applyLiveTextStyle();
+            this.statusLabel.setText(" Font: " + font.getFamily() + " " + font.getSize());
+        });
 
         this.buildToolBox();
         this.buildColorBox();
@@ -98,7 +100,10 @@ public class PaintFrame extends JFrame {
         this.colorBoxMenuItem.addActionListener(e -> this.colorBox.setVisible(this.colorBoxMenuItem.isSelected()));
         this.statusBarMenuItem.addActionListener(e -> this.statusBar.setVisible(this.statusBarMenuItem.isSelected()));
         this.textToolbarMenuItem.addActionListener(e -> this.updateTextToolbarVisibility());
-        this.drawOpaqueMenuItem.addActionListener(e -> this.paint.setDrawOpaque(this.drawOpaqueMenuItem.isSelected()));
+        this.drawOpaqueMenuItem.addActionListener(e -> {
+            this.paint.setDrawOpaque(this.drawOpaqueMenuItem.isSelected());
+            this.canvas.applyLiveTextStyle();
+        });
 
         this.addWindowListener(new WindowAdapter() {
             @Override
@@ -128,6 +133,7 @@ public class PaintFrame extends JFrame {
             button.setMinimumSize(new Dimension(24, 24));
             button.setHorizontalAlignment(SwingConstants.CENTER);
             button.addActionListener(e -> {
+                this.canvas.commitTextIfEditing();
                 this.paint.setTool(tool);
                 this.refreshToolOptions();
                 this.updateEditMenuState();
@@ -180,6 +186,7 @@ public class PaintFrame extends JFrame {
                         PaintFrame.this.paint.setForeground(color);
                     }
                     PaintFrame.this.syncColorSwatches();
+                    PaintFrame.this.canvas.applyLiveTextStyle();
                 }
             });
             swatches.add(swatch);
@@ -468,6 +475,7 @@ public class PaintFrame extends JFrame {
             if (Objects.nonNull(chosen)) {
                 this.paint.setForeground(chosen);
                 this.syncColorSwatches();
+                this.canvas.applyLiveTextStyle();
             }
         });
         colorsMenu.add(editColors);
@@ -490,6 +498,7 @@ public class PaintFrame extends JFrame {
     }
 
     private void printPreview() {
+        this.canvas.commitTextIfEditing();
         this.paint.commitSelectionIfAny();
         final PrintPreviewDialog dialog = new PrintPreviewDialog(
                 this,
@@ -505,6 +514,7 @@ public class PaintFrame extends JFrame {
     }
 
     private void printDocument() {
+        this.canvas.commitTextIfEditing();
         this.paint.commitSelectionIfAny();
         final PrinterJob job = PrinterJob.getPrinterJob();
         job.setJobName(Objects.isNull(this.paint.getPath())
@@ -543,6 +553,7 @@ public class PaintFrame extends JFrame {
         if (!this.confirmDiscardIfNeeded()) {
             return;
         }
+        this.canvas.commitTextIfEditing();
         this.paint.createNew();
         this.refreshCanvas();
     }
@@ -551,6 +562,7 @@ public class PaintFrame extends JFrame {
         if (!this.confirmDiscardIfNeeded()) {
             return;
         }
+        this.canvas.commitTextIfEditing();
         final JFileChooser chooser = imageFileChooser();
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
@@ -728,6 +740,7 @@ public class PaintFrame extends JFrame {
     }
 
     private void exit() {
+        this.canvas.commitTextIfEditing();
         if (!this.confirmDiscardIfNeeded()) {
             return;
         }

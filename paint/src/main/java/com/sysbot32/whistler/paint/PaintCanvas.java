@@ -1,7 +1,10 @@
 package com.sysbot32.whistler.paint;
 
 import javax.swing.*;
+import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
@@ -55,8 +58,18 @@ public class PaintCanvas extends JComponent {
     private int moveGrabX;
     private int moveGrabY;
 
-    // Text placement
+    // Text tool: drag a box, type in-place, commit to bitmap
+    private static final int MIN_TEXT_W = 40;
+    private static final int MIN_TEXT_H = 24;
     private boolean placingText;
+    private boolean editingText;
+    private boolean resizingTextBox;
+    private ResizeHandle textResizeHandle = ResizeHandle.NONE;
+    private int textBoxX;
+    private int textBoxY;
+    private int textBoxW;
+    private int textBoxH;
+    private final JTextArea textEditor = new JTextArea();
 
     // Canvas size drag (classic bottom/right handles)
     private boolean resizing;
@@ -68,8 +81,74 @@ public class PaintCanvas extends JComponent {
         this.paint = Objects.requireNonNull(paint);
         this.setBackground(new Color(128, 128, 128));
         this.setOpaque(true);
+        this.setLayout(null);
         this.syncPreferredSize();
         this.setFocusable(true);
+
+        this.textEditor.setVisible(false);
+        this.textEditor.setLineWrap(true);
+        this.textEditor.setWrapStyleWord(true);
+        this.textEditor.setBorder(new LineBorder(Color.BLACK, 1, false));
+        this.textEditor.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(final KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                    PaintCanvas.this.cancelTextEditor();
+                    e.consume();
+                } else if (e.getKeyCode() == KeyEvent.VK_ENTER && e.isControlDown()) {
+                    PaintCanvas.this.commitTextEditor();
+                    e.consume();
+                }
+            }
+        });
+        // Resize from the editor edges/corner (events don't reach the canvas under JTextArea).
+        this.textEditor.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(final MouseEvent e) {
+                final ResizeHandle handle = PaintCanvas.this.hitTextEditorEdgeHandle(e);
+                if (handle != ResizeHandle.NONE && SwingUtilities.isLeftMouseButton(e)) {
+                    PaintCanvas.this.resizingTextBox = true;
+                    PaintCanvas.this.textResizeHandle = handle;
+                    PaintCanvas.this.updateResizeCursor(handle);
+                    e.consume();
+                }
+            }
+
+            @Override
+            public void mouseReleased(final MouseEvent e) {
+                if (PaintCanvas.this.resizingTextBox) {
+                    PaintCanvas.this.resizingTextBox = false;
+                    PaintCanvas.this.textResizeHandle = ResizeHandle.NONE;
+                    PaintCanvas.this.layoutTextEditor();
+                    PaintCanvas.this.textEditor.requestFocusInWindow();
+                    PaintCanvas.this.repaint();
+                    e.consume();
+                }
+            }
+        });
+        this.textEditor.addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(final MouseEvent e) {
+                if (!PaintCanvas.this.resizingTextBox) {
+                    return;
+                }
+                final Point onCanvas = SwingUtilities.convertPoint(
+                        PaintCanvas.this.textEditor, e.getPoint(), PaintCanvas.this
+                );
+                PaintCanvas.this.resizeTextBoxToView(onCanvas.x, onCanvas.y);
+                e.consume();
+            }
+
+            @Override
+            public void mouseMoved(final MouseEvent e) {
+                if (!PaintCanvas.this.editingText || PaintCanvas.this.resizingTextBox) {
+                    return;
+                }
+                final ResizeHandle handle = PaintCanvas.this.hitTextEditorEdgeHandle(e);
+                PaintCanvas.this.updateResizeCursor(handle);
+            }
+        });
+        this.add(this.textEditor);
 
         this.addMouseListener(new MouseAdapter() {
             @Override
@@ -120,12 +199,32 @@ public class PaintCanvas extends JComponent {
                 w * z + HANDLE_MARGIN,
                 h * z + HANDLE_MARGIN
         ));
+        layoutTextEditor();
     }
 
     public void notifyDocumentChanged() {
         this.syncPreferredSize();
         this.revalidate();
         this.repaint();
+    }
+
+    /** Apply live font/colors while the in-place editor is open. */
+    public void applyLiveTextStyle() {
+        if (this.editingText) {
+            styleTextEditor();
+            layoutTextEditor();
+        }
+    }
+
+    /** Commit floating text when leaving the Text tool or closing the document action. */
+    public void commitTextIfEditing() {
+        if (this.editingText) {
+            commitTextEditor();
+        }
+    }
+
+    public boolean isEditingText() {
+        return this.editingText;
     }
 
     private void resetTransientState() {
@@ -135,8 +234,11 @@ public class PaintCanvas extends JComponent {
         this.freeFormPoints.clear();
         this.movingSelection = false;
         this.placingText = false;
+        this.resizingTextBox = false;
+        this.textResizeHandle = ResizeHandle.NONE;
         this.resizing = false;
         this.activeHandle = ResizeHandle.NONE;
+        discardTextEditor();
     }
 
     private int imgX(final MouseEvent e) {
@@ -168,6 +270,23 @@ public class PaintCanvas extends JComponent {
 
     private void onPress(final MouseEvent e) {
         this.requestFocusInWindow();
+        if (this.editingText && SwingUtilities.isLeftMouseButton(e)) {
+            final ResizeHandle textHandle = hitTextBoxHandle(e.getX(), e.getY());
+            if (textHandle != ResizeHandle.NONE) {
+                this.resizingTextBox = true;
+                this.textResizeHandle = textHandle;
+                updateResizeCursor(textHandle);
+                return;
+            }
+            if (!isInsideTextBoxView(e.getX(), e.getY())) {
+                // Click outside the text box commits (classic Paint leave-box behavior).
+                commitTextEditor();
+            } else {
+                // Edge of box (not handle) — keep focus in editor.
+                this.textEditor.requestFocusInWindow();
+                return;
+            }
+        }
         final ResizeHandle handle = hitResizeHandle(e.getX(), e.getY());
         if (handle != ResizeHandle.NONE && SwingUtilities.isLeftMouseButton(e)) {
             this.paint.commitSelectionIfAny();
@@ -305,6 +424,10 @@ public class PaintCanvas extends JComponent {
     }
 
     private void onDrag(final MouseEvent e) {
+        if (this.resizingTextBox) {
+            resizeTextBoxToView(e.getX(), e.getY());
+            return;
+        }
         if (this.resizing) {
             final int z = Math.max(1, this.paint.getZoom());
             int newW = this.resizePreviewW;
@@ -359,6 +482,15 @@ public class PaintCanvas extends JComponent {
     }
 
     private void onRelease(final MouseEvent e) {
+        if (this.resizingTextBox) {
+            this.resizingTextBox = false;
+            this.textResizeHandle = ResizeHandle.NONE;
+            layoutTextEditor();
+            this.textEditor.requestFocusInWindow();
+            this.repaint();
+            updateResizeCursor(hitTextBoxHandle(e.getX(), e.getY()));
+            return;
+        }
         if (this.resizing) {
             final int newW = this.resizePreviewW;
             final int newH = this.resizePreviewH;
@@ -450,15 +582,11 @@ public class PaintCanvas extends JComponent {
             }
             case TEXT -> {
                 if (this.placingText) {
-                    final String text = JOptionPane.showInputDialog(
-                            this,
-                            "Text:",
-                            "Text",
-                            JOptionPane.PLAIN_MESSAGE
-                    );
-                    if (Objects.nonNull(text) && !text.isEmpty()) {
-                        this.paint.drawTextAt(text, this.startX, this.startY + this.paint.getTextFont().getSize());
-                    }
+                    final int x0 = Math.min(this.startX, x);
+                    final int y0 = Math.min(this.startY, y);
+                    final int w = Math.max(40, Math.abs(x - this.startX));
+                    final int h = Math.max(24, Math.abs(y - this.startY));
+                    openTextEditor(x0, y0, w, h);
                     this.placingText = false;
                 }
             }
@@ -468,6 +596,79 @@ public class PaintCanvas extends JComponent {
         this.drawing = false;
         this.repaint();
         fireDocumentChanged();
+    }
+
+    private void openTextEditor(final int x, final int y, final int w, final int h) {
+        this.textBoxX = x;
+        this.textBoxY = y;
+        this.textBoxW = w;
+        this.textBoxH = h;
+        this.editingText = true;
+        this.textEditor.setText("");
+        styleTextEditor();
+        layoutTextEditor();
+        this.textEditor.setVisible(true);
+        this.textEditor.requestFocusInWindow();
+        this.repaint();
+    }
+
+    private void styleTextEditor() {
+        final Font base = this.paint.getTextFont();
+        final int z = Math.max(1, this.paint.getZoom());
+        this.textEditor.setFont(base.deriveFont(base.getSize2D() * z));
+        this.textEditor.setForeground(this.paint.getForeground());
+        if (this.paint.isDrawOpaque()) {
+            this.textEditor.setOpaque(true);
+            this.textEditor.setBackground(this.paint.getBackground());
+        } else {
+            this.textEditor.setOpaque(false);
+            this.textEditor.setBackground(new Color(255, 255, 255, 0));
+        }
+        this.textEditor.setCaretColor(this.paint.getForeground());
+    }
+
+    private void layoutTextEditor() {
+        if (!this.editingText) {
+            return;
+        }
+        final int z = Math.max(1, this.paint.getZoom());
+        this.textEditor.setBounds(
+                this.textBoxX * z,
+                this.textBoxY * z,
+                Math.max(z * 8, this.textBoxW * z),
+                Math.max(z * 8, this.textBoxH * z)
+        );
+    }
+
+    private void commitTextEditor() {
+        if (!this.editingText) {
+            return;
+        }
+        final String text = this.textEditor.getText();
+        discardTextEditor();
+        if (Objects.nonNull(text) && !text.isEmpty()) {
+            this.paint.drawTextBlock(text, this.textBoxX, this.textBoxY, this.textBoxW, this.textBoxH);
+        }
+        this.repaint();
+        fireDocumentChanged();
+    }
+
+    private void cancelTextEditor() {
+        if (!this.editingText) {
+            return;
+        }
+        discardTextEditor();
+        this.repaint();
+        fireDocumentChanged();
+    }
+
+    private void discardTextEditor() {
+        this.editingText = false;
+        this.placingText = false;
+        this.resizingTextBox = false;
+        this.textResizeHandle = ResizeHandle.NONE;
+        this.textEditor.setText("");
+        this.textEditor.setVisible(false);
     }
 
     private void onClick(final MouseEvent e) {
@@ -480,7 +681,16 @@ public class PaintCanvas extends JComponent {
     }
 
     private void onMove(final MouseEvent e) {
-        if (!this.resizing) {
+        if (this.resizingTextBox) {
+            // keep current resize cursor
+        } else if (this.editingText) {
+            final ResizeHandle textHandle = hitTextBoxHandle(e.getX(), e.getY());
+            if (textHandle != ResizeHandle.NONE) {
+                updateResizeCursor(textHandle);
+            } else if (!this.resizing) {
+                updateResizeCursor(ResizeHandle.NONE);
+            }
+        } else if (!this.resizing) {
             updateResizeCursor(hitResizeHandle(e.getX(), e.getY()));
         }
         final int x = imgX(e);
@@ -492,6 +702,71 @@ public class PaintCanvas extends JComponent {
         if (this.curvePhase > 0 || !this.polygonPoints.isEmpty()) {
             this.repaint();
         }
+    }
+
+    private ResizeHandle hitTextBoxHandle(final int viewX, final int viewY) {
+        if (!this.editingText) {
+            return ResizeHandle.NONE;
+        }
+        final int z = Math.max(1, this.paint.getZoom());
+        final int left = this.textBoxX * z;
+        final int top = this.textBoxY * z;
+        final int right = left + this.textBoxW * z;
+        final int bottom = top + this.textBoxH * z;
+        if (handleHit(viewX, viewY, right, bottom)) {
+            return ResizeHandle.SOUTH_EAST;
+        }
+        if (handleHit(viewX, viewY, right, top + (bottom - top) / 2)) {
+            return ResizeHandle.EAST;
+        }
+        if (handleHit(viewX, viewY, left + (right - left) / 2, bottom)) {
+            return ResizeHandle.SOUTH;
+        }
+        return ResizeHandle.NONE;
+    }
+
+    private ResizeHandle hitTextEditorEdgeHandle(final MouseEvent e) {
+        final int margin = Math.max(HANDLE_HIT, 6);
+        final int w = this.textEditor.getWidth();
+        final int h = this.textEditor.getHeight();
+        final int x = e.getX();
+        final int y = e.getY();
+        final boolean nearRight = x >= w - margin;
+        final boolean nearBottom = y >= h - margin;
+        if (nearRight && nearBottom) {
+            return ResizeHandle.SOUTH_EAST;
+        }
+        if (nearRight) {
+            return ResizeHandle.EAST;
+        }
+        if (nearBottom) {
+            return ResizeHandle.SOUTH;
+        }
+        return ResizeHandle.NONE;
+    }
+
+    private void resizeTextBoxToView(final int viewX, final int viewY) {
+        final int z = Math.max(1, this.paint.getZoom());
+        if (this.textResizeHandle == ResizeHandle.EAST || this.textResizeHandle == ResizeHandle.SOUTH_EAST) {
+            final int right = Math.max(this.textBoxX + MIN_TEXT_W, (viewX + z / 2) / z);
+            this.textBoxW = Math.max(MIN_TEXT_W, right - this.textBoxX);
+        }
+        if (this.textResizeHandle == ResizeHandle.SOUTH || this.textResizeHandle == ResizeHandle.SOUTH_EAST) {
+            final int bottom = Math.max(this.textBoxY + MIN_TEXT_H, (viewY + z / 2) / z);
+            this.textBoxH = Math.max(MIN_TEXT_H, bottom - this.textBoxY);
+        }
+        this.statusLabelCoords(this.textBoxW, this.textBoxH);
+        layoutTextEditor();
+        this.repaint();
+    }
+
+    private boolean isInsideTextBoxView(final int viewX, final int viewY) {
+        final int z = Math.max(1, this.paint.getZoom());
+        final int left = this.textBoxX * z;
+        final int top = this.textBoxY * z;
+        final int right = left + this.textBoxW * z;
+        final int bottom = top + this.textBoxH * z;
+        return viewX >= left && viewX <= right && viewY >= top && viewY <= bottom;
     }
 
     private void updateResizeCursor(final ResizeHandle handle) {
@@ -591,6 +866,9 @@ public class PaintCanvas extends JComponent {
             // Resize handles in view pixels (unscaled)
             g2.setTransform(((Graphics2D) g).getTransform());
             drawResizeHandles(g2, canvasW * z, canvasH * z);
+            if (this.editingText) {
+                drawTextBoxResizeHandles(g2);
+            }
         } finally {
             g2.dispose();
         }
@@ -608,6 +886,17 @@ public class PaintCanvas extends JComponent {
             ));
             g2.drawRect(0, 0, imgW, imgH);
         }
+    }
+
+    private void drawTextBoxResizeHandles(final Graphics2D g2) {
+        final int z = Math.max(1, this.paint.getZoom());
+        final int left = this.textBoxX * z;
+        final int top = this.textBoxY * z;
+        final int right = left + this.textBoxW * z;
+        final int bottom = top + this.textBoxH * z;
+        drawHandle(g2, right, top + (bottom - top) / 2);
+        drawHandle(g2, left + (right - left) / 2, bottom);
+        drawHandle(g2, right, bottom);
     }
 
     private static void drawHandle(final Graphics2D g2, final int cx, final int cy) {

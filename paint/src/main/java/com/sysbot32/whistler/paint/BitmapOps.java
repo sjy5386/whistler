@@ -328,6 +328,50 @@ public final class BitmapOps {
         }
     }
 
+    /**
+     * Rasterize multi-line text into a box (classic Paint Text tool commit).
+     */
+    public static void drawTextBlock(
+            final BufferedImage image,
+            final String text,
+            final int boxX,
+            final int boxY,
+            final int boxWidth,
+            final int boxHeight,
+            final Font font,
+            final Color foreground,
+            final Color background,
+            final boolean opaque
+    ) {
+        if (Objects.isNull(text) || text.isEmpty() || boxWidth <= 0 || boxHeight <= 0) {
+            return;
+        }
+        final Graphics2D g = createDrawingGraphics(image);
+        try {
+            final Shape oldClip = g.getClip();
+            g.setClip(boxX, boxY, boxWidth, boxHeight);
+            if (opaque) {
+                g.setColor(background);
+                g.fillRect(boxX, boxY, boxWidth, boxHeight);
+            }
+            g.setFont(font);
+            g.setColor(foreground);
+            final var metrics = g.getFontMetrics();
+            int lineY = boxY + metrics.getAscent();
+            final int lineHeight = Math.max(1, metrics.getHeight());
+            for (final String line : text.split("\n", -1)) {
+                if (lineY - metrics.getAscent() >= boxY + boxHeight) {
+                    break;
+                }
+                g.drawString(line, boxX, lineY);
+                lineY += lineHeight;
+            }
+            g.setClip(oldClip);
+        } finally {
+            g.dispose();
+        }
+    }
+
     public static void invertColors(final BufferedImage image) {
         final int w = image.getWidth();
         final int h = image.getHeight();

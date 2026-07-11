@@ -487,6 +487,32 @@ public class Paint {
         this.edited = true;
     }
 
+    public void drawTextBlock(
+            final String text,
+            final int boxX,
+            final int boxY,
+            final int boxWidth,
+            final int boxHeight
+    ) {
+        if (Objects.isNull(text) || text.isEmpty()) {
+            return;
+        }
+        pushUndo();
+        BitmapOps.drawTextBlock(
+                this.image,
+                text,
+                boxX,
+                boxY,
+                boxWidth,
+                boxHeight,
+                this.textFont,
+                this.foreground,
+                this.background,
+                this.drawOpaque
+        );
+        this.edited = true;
+    }
+
     public void beginRectangularSelection(final int x0, final int y0, final int x1, final int y1) {
         commitSelectionIfAny();
         pushUndo();

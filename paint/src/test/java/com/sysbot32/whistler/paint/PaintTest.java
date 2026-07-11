@@ -102,6 +102,27 @@ class PaintTest {
     }
 
     @Test
+    void drawTextBlockCommitsIntoDocument() {
+        final Paint paint = new Paint(80, 40);
+        paint.setForeground(Color.BLUE);
+        paint.setBackground(Color.WHITE);
+        paint.setDrawOpaque(true);
+        paint.setTextFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 16));
+        paint.drawTextBlock("Hi", 4, 4, 50, 28);
+        boolean blue = false;
+        for (int y = 4; y < 32; y++) {
+            for (int x = 4; x < 54; x++) {
+                if (paint.getImage().getRGB(x, y) == Color.BLUE.getRGB()) {
+                    blue = true;
+                    break;
+                }
+            }
+        }
+        assertTrue(blue);
+        assertTrue(paint.isEdited());
+    }
+
+    @Test
     void rightButtonShapeUsesBackgroundForOutline() {
         final Paint paint = new Paint(40, 40);
         paint.setForeground(Color.RED);

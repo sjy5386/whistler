@@ -126,6 +126,34 @@ class BitmapOpsTest {
     }
 
     @Test
+    void drawTextBlockRastersMultiLineInBox() {
+        final BufferedImage image = BitmapOps.createBlank(100, 60);
+        BitmapOps.drawTextBlock(
+                image,
+                "Ab\nC",
+                5,
+                5,
+                80,
+                50,
+                new Font(Font.MONOSPACED, Font.PLAIN, 14),
+                Color.RED,
+                Color.YELLOW,
+                true
+        );
+        assertEquals(Color.YELLOW.getRGB(), image.getRGB(6, 6));
+        boolean red = false;
+        for (int y = 5; y < 55; y++) {
+            for (int x = 5; x < 85; x++) {
+                if (image.getRGB(x, y) == Color.RED.getRGB()) {
+                    red = true;
+                    break;
+                }
+            }
+        }
+        assertTrue(red);
+    }
+
+    @Test
     void invertFlipRotateStretchChangePixels() {
         final BufferedImage image = BitmapOps.createBlank(4, 2);
         image.setRGB(0, 0, Color.BLACK.getRGB());
