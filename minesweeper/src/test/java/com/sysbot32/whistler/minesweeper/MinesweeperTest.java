@@ -241,6 +241,72 @@ class MinesweeperTest {
         assertEquals(GameStatus.LOST, game.getStatus());
         assertFalse(game.open(0, 0));
         assertFalse(game.toggleFlag(0, 1));
+        assertFalse(game.chord(0, 0));
+    }
+
+    @Test
+    void chordOpensNeighborsWhenFlagsMatch() {
+        // Mine only at (0,0). Opening (1,1) leaves a "1" with three covered neighbors.
+        final boolean[][] mines = {
+                {true, false},
+                {false, false}
+        };
+        final Minesweeper game = Minesweeper.withPlacedMines(mines);
+        assertTrue(game.open(1, 1));
+        assertEquals(1, game.getCell(1, 1).getAdjacentMines());
+        assertTrue(game.getCell(1, 1).isOpen());
+
+        assertFalse(game.chord(1, 1)); // not enough flags yet
+        assertTrue(game.toggleFlag(0, 0, false));
+        assertTrue(game.chord(1, 1));
+        assertTrue(game.getCell(0, 1).isOpen());
+        assertTrue(game.getCell(1, 0).isOpen());
+        assertEquals(GameStatus.WON, game.getStatus());
+    }
+
+    @Test
+    void chordDoesNothingWhenFlagCountWrong() {
+        final boolean[][] mines = {
+                {true, false},
+                {false, false}
+        };
+        final Minesweeper game = Minesweeper.withPlacedMines(mines);
+        game.open(1, 1);
+        assertEquals(1, game.getCell(1, 1).getAdjacentMines());
+        assertFalse(game.chord(1, 1)); // 0 flags
+
+        game.toggleFlag(0, 0, false);
+        game.toggleFlag(0, 1, false); // 2 flags around a "1"
+        assertEquals(2, game.countAdjacentFlags(1, 1));
+        assertFalse(game.chord(1, 1));
+        assertFalse(game.getCell(1, 0).isOpen());
+    }
+
+    @Test
+    void chordHitsMineWhenFlagIsWrongButCountMatches() {
+        // One mine at (0,0). Cell (1,1) has adjacent=1.
+        final boolean[][] mines = {
+                {true, false},
+                {false, false}
+        };
+        final Minesweeper game = Minesweeper.withPlacedMines(mines);
+        game.open(1, 1);
+        game.toggleFlag(0, 1, false); // wrong flag on safe cell
+        assertTrue(game.chord(1, 1)); // count matches (1 flag) but opens the real mine
+        assertEquals(GameStatus.LOST, game.getStatus());
+        assertTrue(game.getCell(0, 0).isOpen());
+    }
+
+    @Test
+    void chordIgnoresCoveredAndEmptyCells() {
+        final boolean[][] mines = {
+                {false, false},
+                {false, false}
+        };
+        final Minesweeper game = Minesweeper.withPlacedMines(mines);
+        assertFalse(game.chord(0, 0)); // still covered
+        game.open(0, 0);
+        assertFalse(game.chord(0, 0)); // open zero — not a numbered cell
     }
 
     private static int countMines(final Minesweeper game) {

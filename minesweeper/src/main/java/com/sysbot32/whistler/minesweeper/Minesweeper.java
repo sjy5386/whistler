@@ -162,6 +162,99 @@ public class Minesweeper {
         }
     }
 
+    /**
+     * Chording (both-button / middle-click): if {@code (row, col)} is an open numbered
+     * cell and the number of adjacent flags equals its adjacent-mine count, opens every
+     * unflagged neighbor.
+     *
+     * @return {@code true} if any cell changed
+     */
+    public boolean chord(final int row, final int col) {
+        this.checkBounds(row, col);
+        if (this.status == GameStatus.WON || this.status == GameStatus.LOST) {
+            return false;
+        }
+        final Cell cell = this.cells[row][col];
+        if (!cell.isOpen() || cell.isMine()) {
+            return false;
+        }
+        final int adjacent = cell.getAdjacentMines();
+        if (adjacent <= 0) {
+            return false;
+        }
+        if (this.countAdjacentFlags(row, col) != adjacent) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (int i = 0; i < DR.length; i++) {
+            final int nr = row + DR[i];
+            final int nc = col + DC[i];
+            if (!this.isInBounds(nr, nc)) {
+                continue;
+            }
+            final Cell neighbor = this.cells[nr][nc];
+            if (neighbor.isOpen() || neighbor.isFlagged()) {
+                continue;
+            }
+            if (this.open(nr, nc)) {
+                changed = true;
+            }
+            if (this.status == GameStatus.WON || this.status == GameStatus.LOST) {
+                break;
+            }
+        }
+        return changed;
+    }
+
+    public int countAdjacentFlags(final int row, final int col) {
+        this.checkBounds(row, col);
+        int flags = 0;
+        for (int i = 0; i < DR.length; i++) {
+            final int nr = row + DR[i];
+            final int nc = col + DC[i];
+            if (this.isInBounds(nr, nc) && this.cells[nr][nc].isFlagged()) {
+                flags++;
+            }
+        }
+        return flags;
+    }
+
+    /**
+     * Builds a board with mines already placed (skips first-click placement). Intended for tests.
+     */
+    public static Minesweeper withPlacedMines(final boolean[][] mineMap) {
+        Objects.requireNonNull(mineMap, "mineMap");
+        if (mineMap.length == 0 || mineMap[0].length == 0) {
+            throw new IllegalArgumentException("mineMap must be non-empty");
+        }
+        final int rows = mineMap.length;
+        final int cols = mineMap[0].length;
+        int mines = 0;
+        for (int r = 0; r < rows; r++) {
+            if (mineMap[r].length != cols) {
+                throw new IllegalArgumentException("mineMap must be rectangular");
+            }
+            for (int c = 0; c < cols; c++) {
+                if (mineMap[r][c]) {
+                    mines++;
+                }
+            }
+        }
+        if (mines >= rows * cols) {
+            throw new IllegalArgumentException("At least one non-mine cell is required");
+        }
+        final Minesweeper game = new Minesweeper(rows, cols, mines, new Random(0));
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                game.cells[r][c].setMine(mineMap[r][c]);
+            }
+        }
+        game.computeAdjacentMines();
+        game.minesPlaced = true;
+        return game;
+    }
+
     public void reset() {
         for (int r = 0; r < this.rows; r++) {
             for (int c = 0; c < this.cols; c++) {
