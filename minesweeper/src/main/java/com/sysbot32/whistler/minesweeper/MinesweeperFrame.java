@@ -8,6 +8,7 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.Objects;
@@ -66,8 +67,6 @@ public class MinesweeperFrame extends JFrame {
     private boolean rightButtonDown;
     private boolean chordArmed;
     private boolean chordConsumed;
-    private int pressRow = -1;
-    private int pressCol = -1;
     private int previewRow = -1;
     private int previewCol = -1;
 
@@ -263,8 +262,6 @@ public class MinesweeperFrame extends JFrame {
         if (this.game.getStatus() == GameStatus.WON || this.game.getStatus() == GameStatus.LOST) {
             return;
         }
-        this.pressRow = row;
-        this.pressCol = col;
 
         if (SwingUtilities.isMiddleMouseButton(e)) {
             this.mouseDownOnCell = true;
@@ -299,9 +296,10 @@ public class MinesweeperFrame extends JFrame {
             return;
         }
 
-        final boolean over = this.isOverCell(e);
-        final int targetRow = over ? row : this.pressRow;
-        final int targetCol = over ? col : this.pressCol;
+        final CellButton target = this.findCellAt(e);
+        final boolean over = target != null;
+        final int targetRow = over ? target.row : row;
+        final int targetCol = over ? target.col : col;
 
         if (SwingUtilities.isMiddleMouseButton(e)) {
             if (over && this.chordArmed) {
@@ -352,11 +350,20 @@ public class MinesweeperFrame extends JFrame {
         }
     }
 
-    private void onCellExited() {
-        if (this.leftButtonDown || this.rightButtonDown || this.chordArmed) {
-            this.resetPointerState();
-            this.refreshUi();
+    private void onCellDragged(final MouseEvent e) {
+        if (!this.leftButtonDown && !this.rightButtonDown && !this.chordArmed) {
+            return;
         }
+        final CellButton target = this.findCellAt(e);
+        this.mouseDownOnCell = target != null;
+        if (target == null) {
+            this.clearChordPreview();
+        } else {
+            if (this.chordArmed) {
+                this.showChordPreview(target.row, target.col);
+            }
+        }
+        this.updateFace();
     }
 
     private void applyOpen(final int row, final int col) {
@@ -442,8 +449,6 @@ public class MinesweeperFrame extends JFrame {
         this.chordArmed = false;
         this.chordConsumed = false;
         this.mouseDownOnCell = false;
-        this.pressRow = -1;
-        this.pressCol = -1;
         this.clearChordPreview();
     }
 
@@ -479,10 +484,11 @@ public class MinesweeperFrame extends JFrame {
         BestTimesDialog.show(this, this.bestTimes);
     }
 
-    private boolean isOverCell(final MouseEvent e) {
+    private CellButton findCellAt(final MouseEvent e) {
         final Component source = (Component) e.getSource();
-        final Point p = e.getPoint();
-        return p.x >= 0 && p.y >= 0 && p.x < source.getWidth() && p.y < source.getHeight();
+        final Point point = SwingUtilities.convertPoint(source, e.getPoint(), this.boardPanel);
+        final Component target = this.boardPanel.getComponentAt(point);
+        return target instanceof CellButton ? (CellButton) target : null;
     }
 
     private void maybeStartTimer() {
@@ -596,10 +602,11 @@ public class MinesweeperFrame extends JFrame {
                 public void mouseReleased(final MouseEvent e) {
                     MinesweeperFrame.this.onCellReleased(row, col, e);
                 }
-
+            });
+            this.addMouseMotionListener(new MouseMotionAdapter() {
                 @Override
-                public void mouseExited(final MouseEvent e) {
-                    MinesweeperFrame.this.onCellExited();
+                public void mouseDragged(final MouseEvent e) {
+                    MinesweeperFrame.this.onCellDragged(e);
                 }
             });
             this.refresh();
