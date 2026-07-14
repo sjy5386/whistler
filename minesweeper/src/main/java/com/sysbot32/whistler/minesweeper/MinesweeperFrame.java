@@ -59,16 +59,8 @@ public class MinesweeperFrame extends JFrame {
     private final Timer swingTimer;
     private int elapsedSeconds;
     private boolean timerRunning;
-    private boolean mouseDownOnCell;
     private boolean marksEnabled;
-
-    /** Chord / multi-button tracking (classic both-button click). */
-    private boolean leftButtonDown;
-    private boolean rightButtonDown;
-    private boolean chordArmed;
-    private boolean chordConsumed;
-    private int previewRow = -1;
-    private int previewCol = -1;
+    private final BoardMouseController pointer = new BoardMouseController();
 
     public MinesweeperFrame(final Config config) {
         super(TITLE);
@@ -236,7 +228,7 @@ public class MinesweeperFrame extends JFrame {
         this.boardSpec = boardSpec;
         this.saveBoardSpec();
         this.game = new Minesweeper(boardSpec.getRows(), boardSpec.getCols(), boardSpec.getMines());
-        this.resetPointerState();
+        this.pointer.reset();
         this.rebuildBoard();
         this.refreshUi();
         this.pack();
@@ -262,108 +254,73 @@ public class MinesweeperFrame extends JFrame {
         if (this.game.getStatus() == GameStatus.WON || this.game.getStatus() == GameStatus.LOST) {
             return;
         }
-
         if (SwingUtilities.isMiddleMouseButton(e)) {
-            this.mouseDownOnCell = true;
-            this.chordArmed = true;
-            this.showChordPreview(row, col);
-            this.updateFace();
-            return;
-        }
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            this.leftButtonDown = true;
-        }
-        if (SwingUtilities.isRightMouseButton(e)) {
-            this.rightButtonDown = true;
-        }
-        // Some platforms deliver one event with both buttons; also track sequential press.
-        if (this.leftButtonDown && this.rightButtonDown) {
-            this.chordArmed = true;
-        }
-        if (this.leftButtonDown || this.chordArmed) {
-            this.mouseDownOnCell = true;
-            if (this.chordArmed) {
-                this.showChordPreview(row, col);
+            this.pointer.press(BoardMouseController.Button.MIDDLE, row, col);
+        } else {
+            if (SwingUtilities.isLeftMouseButton(e)) {
+                this.pointer.press(BoardMouseController.Button.LEFT, row, col);
             }
-            this.updateFace();
+            if (SwingUtilities.isRightMouseButton(e)) {
+                this.pointer.press(BoardMouseController.Button.RIGHT, row, col);
+            }
         }
+        this.updatePointerVisuals();
     }
 
     private void onCellReleased(final int row, final int col, final MouseEvent e) {
         if (this.game.getStatus() == GameStatus.WON || this.game.getStatus() == GameStatus.LOST) {
-            this.resetPointerState();
-            this.updateFace();
+            this.pointer.reset();
+            this.updatePointerVisuals();
             return;
         }
 
-        final CellButton target = this.findCellAt(e);
-        final boolean over = target != null;
-        final int targetRow = over ? target.row : row;
-        final int targetCol = over ? target.col : col;
+        this.syncPointerHover(e);
 
+        final BoardMouseController.Action action;
         if (SwingUtilities.isMiddleMouseButton(e)) {
-            if (over && this.chordArmed) {
-                this.applyChord(targetRow, targetCol);
-            }
-            this.resetPointerState();
-            this.refreshUi();
+            action = this.pointer.release(BoardMouseController.Button.MIDDLE);
+        } else if (SwingUtilities.isLeftMouseButton(e)) {
+            action = this.pointer.release(BoardMouseController.Button.LEFT);
+        } else if (SwingUtilities.isRightMouseButton(e)) {
+            action = this.pointer.release(BoardMouseController.Button.RIGHT);
+        } else {
             return;
         }
 
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            this.leftButtonDown = false;
-        }
-        if (SwingUtilities.isRightMouseButton(e)) {
-            this.rightButtonDown = false;
-        }
-
-        if (this.chordArmed) {
-            if (over && !this.chordConsumed) {
-                this.applyChord(targetRow, targetCol);
-                this.chordConsumed = true;
-            }
-            if (!this.leftButtonDown && !this.rightButtonDown) {
-                this.resetPointerState();
-                this.refreshUi();
-            } else {
-                this.mouseDownOnCell = this.leftButtonDown || this.rightButtonDown;
-                this.clearChordPreview();
-                this.updateFace();
-            }
-            return;
-        }
-
-        // Single-button actions only when a chord was never armed.
-        if (over && SwingUtilities.isLeftMouseButton(e)) {
-            this.applyOpen(targetRow, targetCol);
-        } else if (over && SwingUtilities.isRightMouseButton(e)) {
-            if (this.game.toggleFlag(targetRow, targetCol, this.marksEnabled)) {
-                this.refreshUi();
-            } else {
-                this.updateFace();
-            }
-        }
-
-        if (!this.leftButtonDown && !this.rightButtonDown) {
-            this.resetPointerState();
-            this.updateFace();
-        }
+        this.applyPointerAction(action);
+        this.updatePointerVisuals();
     }
 
     private void onCellDragged(final MouseEvent e) {
-        if (!this.leftButtonDown && !this.rightButtonDown && !this.chordArmed) {
+        if (!this.pointer.isAnyButtonDown()) {
             return;
         }
+        this.syncPointerHover(e);
+        this.updatePointerVisuals();
+    }
+
+    private void syncPointerHover(final MouseEvent e) {
         final CellButton target = this.findCellAt(e);
-        this.mouseDownOnCell = target != null;
         if (target == null) {
-            this.clearChordPreview();
+            this.pointer.hoverOutside();
         } else {
-            if (this.chordArmed) {
-                this.showChordPreview(target.row, target.col);
+            this.pointer.hover(target.row, target.col);
+        }
+    }
+
+    private void applyPointerAction(final BoardMouseController.Action action) {
+        switch (action.type()) {
+            case OPEN -> this.applyOpen(action.row(), action.col());
+            case FLAG -> {
+                if (this.game.toggleFlag(action.row(), action.col(), this.marksEnabled)) {
+                    this.refreshUi();
+                }
+            }
+            case CHORD -> this.applyChord(action.row(), action.col());
+            case NONE -> {
+                // no game action
             }
         }
-        this.updateFace();
     }
 
     private void applyOpen(final int row, final int col) {
@@ -372,8 +329,6 @@ public class MinesweeperFrame extends JFrame {
             this.maybeStartTimer();
             this.refreshUi();
             this.afterMove();
-        } else {
-            this.updateFace();
         }
     }
 
@@ -383,9 +338,6 @@ public class MinesweeperFrame extends JFrame {
             this.maybeStartTimer();
             this.refreshUi();
             this.afterMove();
-        } else {
-            this.clearChordPreview();
-            this.updateFace();
         }
     }
 
@@ -398,14 +350,35 @@ public class MinesweeperFrame extends JFrame {
         }
     }
 
-    private void showChordPreview(final int row, final int col) {
-        this.clearChordPreview();
-        this.previewRow = row;
-        this.previewCol = col;
+    private void updatePointerVisuals() {
+        this.clearAllPressPreviews();
+        final BoardMouseController.PreviewMode mode = this.pointer.previewMode();
+        this.pointer.hoverCell().ifPresent(hover -> {
+            final int row = hover[0];
+            final int col = hover[1];
+            if (mode == BoardMouseController.PreviewMode.CELL) {
+                this.showCellPressPreview(row, col);
+            } else if (mode == BoardMouseController.PreviewMode.CHORD_NEIGHBORS) {
+                this.showChordNeighborPreview(row, col);
+            }
+        });
+        this.updateFace();
+    }
+
+    private void showCellPressPreview(final int row, final int col) {
         if (this.cellButtons == null || !this.game.isInBounds(row, col)) {
             return;
         }
-        // Depress covered, unflagged neighbors around the chording cell (XP-style hint).
+        final Cell cell = this.game.getCell(row, col);
+        if (!cell.isOpen() && !cell.isFlagged()) {
+            this.cellButtons[row][col].setPressedPreview(true);
+        }
+    }
+
+    private void showChordNeighborPreview(final int row, final int col) {
+        if (this.cellButtons == null || !this.game.isInBounds(row, col)) {
+            return;
+        }
         for (int dr = -1; dr <= 1; dr++) {
             for (int dc = -1; dc <= 1; dc++) {
                 if (dr == 0 && dc == 0) {
@@ -424,32 +397,15 @@ public class MinesweeperFrame extends JFrame {
         }
     }
 
-    private void clearChordPreview() {
-        if (this.previewRow < 0 || this.cellButtons == null) {
-            this.previewRow = -1;
-            this.previewCol = -1;
+    private void clearAllPressPreviews() {
+        if (this.cellButtons == null) {
             return;
         }
-        for (int dr = -1; dr <= 1; dr++) {
-            for (int dc = -1; dc <= 1; dc++) {
-                final int nr = this.previewRow + dr;
-                final int nc = this.previewCol + dc;
-                if (this.game.isInBounds(nr, nc)) {
-                    this.cellButtons[nr][nc].setPressedPreview(false);
-                }
+        for (int r = 0; r < this.cellButtons.length; r++) {
+            for (int c = 0; c < this.cellButtons[r].length; c++) {
+                this.cellButtons[r][c].setPressedPreview(false);
             }
         }
-        this.previewRow = -1;
-        this.previewCol = -1;
-    }
-
-    private void resetPointerState() {
-        this.leftButtonDown = false;
-        this.rightButtonDown = false;
-        this.chordArmed = false;
-        this.chordConsumed = false;
-        this.mouseDownOnCell = false;
-        this.clearChordPreview();
     }
 
     private void setMarksEnabled(final boolean enabled) {
@@ -525,7 +481,7 @@ public class MinesweeperFrame extends JFrame {
             this.faceButton.setText("😎");
         } else if (this.game.getStatus() == GameStatus.LOST) {
             this.faceButton.setText("😵");
-        } else if (this.mouseDownOnCell) {
+        } else if (this.pointer.isFacePressed()) {
             this.faceButton.setText("😮");
         } else {
             this.faceButton.setText("🙂");
