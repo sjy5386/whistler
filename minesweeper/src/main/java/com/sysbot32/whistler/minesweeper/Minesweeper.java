@@ -117,12 +117,18 @@ public class Minesweeper {
     }
 
     /**
-     * Cycles marks on a covered cell: none → flag → question → none.
+     * Cycles marks on a covered cell.
+     * With marks enabled: none → flag → question → none.
+     * With marks disabled: none ↔ flag.
      * Only flags affect the remaining-mine counter.
      *
      * @return {@code true} if the mark state changed
      */
     public boolean toggleFlag(final int row, final int col) {
+        return this.toggleFlag(row, col, true);
+    }
+
+    public boolean toggleFlag(final int row, final int col, final boolean marksEnabled) {
         this.checkBounds(row, col);
         if (this.status == GameStatus.WON || this.status == GameStatus.LOST) {
             return false;
@@ -132,7 +138,8 @@ public class Minesweeper {
             return false;
         }
         final boolean wasFlagged = cell.isFlagged();
-        cell.cycleMark();
+        final boolean wasQuestion = cell.isQuestionMarked();
+        cell.cycleMark(marksEnabled);
         if (cell.isFlagged() && !wasFlagged) {
             this.flagCount++;
         } else if (!cell.isFlagged() && wasFlagged) {
@@ -141,7 +148,18 @@ public class Minesweeper {
         if (this.status == GameStatus.READY) {
             this.status = GameStatus.PLAYING;
         }
-        return true;
+        return cell.isFlagged() != wasFlagged || cell.isQuestionMarked() != wasQuestion;
+    }
+
+    /**
+     * Clears every question mark on the board (e.g. when Marks is turned off).
+     */
+    public void clearAllQuestionMarks() {
+        for (int r = 0; r < this.rows; r++) {
+            for (int c = 0; c < this.cols; c++) {
+                this.cells[r][c].clearQuestionMark();
+            }
+        }
     }
 
     public void reset() {

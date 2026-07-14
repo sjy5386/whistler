@@ -22,6 +22,7 @@ public class MinesweeperFrame extends JFrame {
     private static final String CONFIG_CUSTOM_ROWS = "custom.rows";
     private static final String CONFIG_CUSTOM_COLS = "custom.cols";
     private static final String CONFIG_CUSTOM_MINES = "custom.mines";
+    private static final String CONFIG_MARKS = "marks";
     private static final Color PANEL_GRAY = new Color(0xC0, 0xC0, 0xC0);
 
     private static final Color[] NUMBER_COLORS = {
@@ -52,16 +53,19 @@ public class MinesweeperFrame extends JFrame {
     private JRadioButtonMenuItem intermediateItem;
     private JRadioButtonMenuItem expertItem;
     private JRadioButtonMenuItem customItem;
+    private JCheckBoxMenuItem marksMenuItem;
 
     private final Timer swingTimer;
     private int elapsedSeconds;
     private boolean timerRunning;
     private boolean mouseDownOnCell;
+    private boolean marksEnabled;
 
     public MinesweeperFrame(final Config config) {
         super(TITLE);
         this.config = Objects.requireNonNull(config, "config");
         this.bestTimes = new BestTimes(config);
+        this.marksEnabled = this.loadMarksEnabled();
         this.boardSpec = this.loadBoardSpec();
         this.game = new Minesweeper(this.boardSpec.getRows(), this.boardSpec.getCols(), this.boardSpec.getMines());
 
@@ -152,6 +156,10 @@ public class MinesweeperFrame extends JFrame {
         this.expertItem.addActionListener(e -> this.newGame(BoardSpec.of(Difficulty.EXPERT)));
         this.customItem.addActionListener(e -> this.promptCustomField());
 
+        this.marksMenuItem = new JCheckBoxMenuItem("Marks (?)", this.marksEnabled);
+        this.marksMenuItem.setMnemonic(KeyEvent.VK_M);
+        this.marksMenuItem.addActionListener(e -> this.setMarksEnabled(this.marksMenuItem.isSelected()));
+
         final JMenuItem bestTimesItem = new JMenuItem("Best Times...", KeyEvent.VK_T);
         bestTimesItem.addActionListener(e -> BestTimesDialog.show(this, this.bestTimes));
 
@@ -165,6 +173,7 @@ public class MinesweeperFrame extends JFrame {
         gameMenu.add(this.expertItem);
         gameMenu.add(this.customItem);
         gameMenu.addSeparator();
+        gameMenu.add(this.marksMenuItem);
         gameMenu.add(bestTimesItem);
         gameMenu.addSeparator();
         gameMenu.add(exitItem);
@@ -175,7 +184,9 @@ public class MinesweeperFrame extends JFrame {
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
                 this,
                 "Minesweeper\nWhistler — Windows XP classic reimplementation\n\n"
-                        + "Left-click: open\nRight-click: flag / ? / clear\nF2: new game",
+                        + "Left-click: open\nRight-click: flag"
+                        + (this.marksEnabled ? " / ? / clear" : "")
+                        + "\nF2: new game",
                 "About Minesweeper",
                 JOptionPane.INFORMATION_MESSAGE
         ));
@@ -272,7 +283,7 @@ public class MinesweeperFrame extends JFrame {
                 this.updateFace();
             }
         } else if (SwingUtilities.isRightMouseButton(e)) {
-            if (this.game.toggleFlag(row, col)) {
+            if (this.game.toggleFlag(row, col, this.marksEnabled)) {
                 this.refreshUi();
             } else {
                 this.updateFace();
@@ -280,6 +291,15 @@ public class MinesweeperFrame extends JFrame {
         } else {
             this.updateFace();
         }
+    }
+
+    private void setMarksEnabled(final boolean enabled) {
+        this.marksEnabled = enabled;
+        if (!enabled) {
+            this.game.clearAllQuestionMarks();
+            this.refreshUi();
+        }
+        this.saveMarksEnabled();
     }
 
     private void handleWin() {
@@ -383,9 +403,19 @@ public class MinesweeperFrame extends JFrame {
         this.config.save();
     }
 
+    private boolean loadMarksEnabled() {
+        return Boolean.parseBoolean(this.config.get(CONFIG_MARKS, "true"));
+    }
+
+    private void saveMarksEnabled() {
+        this.config.set(CONFIG_MARKS, String.valueOf(this.marksEnabled));
+        this.config.save();
+    }
+
     private void exit() {
         this.stopTimer(false);
         this.saveBoardSpec();
+        this.saveMarksEnabled();
         this.dispose();
     }
 

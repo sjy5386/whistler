@@ -22,10 +22,23 @@ public class Cell {
     }
 
     /**
-     * Cycles covered-cell marks: none → flag → question → none.
+     * Cycles covered-cell marks.
+     * <ul>
+     *   <li>Marks on: none → flag → question → none</li>
+     *   <li>Marks off: none ↔ flag (question marks are cleared)</li>
+     * </ul>
      */
-    public void cycleMark() {
+    public void cycleMark(final boolean marksEnabled) {
         if (this.open) {
+            return;
+        }
+        if (!marksEnabled) {
+            if (this.questionMarked) {
+                this.questionMarked = false;
+                this.flagged = false;
+                return;
+            }
+            this.flagged = !this.flagged;
             return;
         }
         if (!this.flagged && !this.questionMarked) {

@@ -115,20 +115,57 @@ class MinesweeperTest {
         final Minesweeper game = new Minesweeper(Difficulty.BEGINNER);
         assertEquals(10, game.getRemainingMines());
 
-        assertTrue(game.toggleFlag(0, 0));
+        assertTrue(game.toggleFlag(0, 0, true));
         assertTrue(game.getCell(0, 0).isFlagged());
         assertFalse(game.getCell(0, 0).isQuestionMarked());
         assertEquals(9, game.getRemainingMines());
 
-        assertTrue(game.toggleFlag(0, 0));
+        assertTrue(game.toggleFlag(0, 0, true));
         assertFalse(game.getCell(0, 0).isFlagged());
         assertTrue(game.getCell(0, 0).isQuestionMarked());
         assertEquals(10, game.getRemainingMines());
 
-        assertTrue(game.toggleFlag(0, 0));
+        assertTrue(game.toggleFlag(0, 0, true));
         assertFalse(game.getCell(0, 0).isFlagged());
         assertFalse(game.getCell(0, 0).isQuestionMarked());
         assertEquals(10, game.getRemainingMines());
+    }
+
+    @Test
+    void marksDisabledTogglesFlagOnly() {
+        final Minesweeper game = new Minesweeper(Difficulty.BEGINNER);
+
+        assertTrue(game.toggleFlag(0, 0, false));
+        assertTrue(game.getCell(0, 0).isFlagged());
+        assertEquals(9, game.getRemainingMines());
+
+        assertTrue(game.toggleFlag(0, 0, false));
+        assertFalse(game.getCell(0, 0).isFlagged());
+        assertFalse(game.getCell(0, 0).isQuestionMarked());
+        assertEquals(10, game.getRemainingMines());
+
+        // Even after a question mark was set with marks on, marks-off clears it.
+        assertTrue(game.toggleFlag(1, 1, true));
+        assertTrue(game.toggleFlag(1, 1, true));
+        assertTrue(game.getCell(1, 1).isQuestionMarked());
+        assertTrue(game.toggleFlag(1, 1, false));
+        assertFalse(game.getCell(1, 1).isQuestionMarked());
+        assertFalse(game.getCell(1, 1).isFlagged());
+    }
+
+    @Test
+    void clearAllQuestionMarksLeavesFlags() {
+        final Minesweeper game = new Minesweeper(Difficulty.BEGINNER);
+        game.toggleFlag(0, 0, true);
+        game.toggleFlag(1, 1, true);
+        game.toggleFlag(1, 1, true);
+        assertTrue(game.getCell(0, 0).isFlagged());
+        assertTrue(game.getCell(1, 1).isQuestionMarked());
+
+        game.clearAllQuestionMarks();
+        assertTrue(game.getCell(0, 0).isFlagged());
+        assertFalse(game.getCell(1, 1).isQuestionMarked());
+        assertEquals(9, game.getRemainingMines());
     }
 
     @Test
@@ -143,8 +180,8 @@ class MinesweeperTest {
     @Test
     void canOpenQuestionMarkedCell() {
         final Minesweeper game = new Minesweeper(5, 5, 3, new Random(1));
-        assertTrue(game.toggleFlag(2, 2));
-        assertTrue(game.toggleFlag(2, 2));
+        assertTrue(game.toggleFlag(2, 2, true));
+        assertTrue(game.toggleFlag(2, 2, true));
         assertTrue(game.getCell(2, 2).isQuestionMarked());
         assertTrue(game.open(2, 2));
         assertTrue(game.getCell(2, 2).isOpen());
