@@ -2,6 +2,7 @@ package com.sysbot32.whistler.notepad;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,7 +15,9 @@ import java.util.Objects;
 @Getter
 @NoArgsConstructor
 public class Notepad {
+    @Setter
     private String content = "";
+    @Setter
     private boolean edited = false;
     private Path path = null;
 
@@ -30,14 +33,6 @@ public class Notepad {
         this.content = "";
         this.path = null;
         this.edited = false;
-    }
-
-    public void setContent(final String content) {
-        this.content = content;
-    }
-
-    public void setEdited(final boolean edited) {
-        this.edited = edited;
     }
 
     public String open(final Path path) throws IOException {

@@ -1,8 +1,10 @@
 package com.sysbot32.whistler.paint;
 
+import lombok.NonNull;
+import lombok.Setter;
+
 import javax.swing.*;
 import java.awt.*;
-import java.util.Objects;
 import java.util.function.BiConsumer;
 
 /**
@@ -14,6 +16,8 @@ public class TextToolbar extends JDialog {
     private final JToggleButton boldButton;
     private final JToggleButton italicButton;
     private final JToggleButton underlineButton;
+    @Setter
+    @NonNull
     private BiConsumer<Font, Boolean> styleListener = (f, u) -> {
     };
     private boolean updating;
@@ -63,10 +67,6 @@ public class TextToolbar extends JDialog {
         this.boldButton.addActionListener(e -> this.emitStyle());
         this.italicButton.addActionListener(e -> this.emitStyle());
         this.underlineButton.addActionListener(e -> this.emitStyle());
-    }
-
-    public void setStyleListener(final BiConsumer<Font, Boolean> styleListener) {
-        this.styleListener = Objects.requireNonNull(styleListener);
     }
 
     public void syncFrom(final Font font, final boolean underline) {

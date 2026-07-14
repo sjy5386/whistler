@@ -1,11 +1,14 @@
 package com.sysbot32.whistler.notepad;
 
+import lombok.Getter;
+
 import java.util.Objects;
 
 /**
  * Active find parameters. When the Find dialog is open, live controls win over cached values
  * so F3 / Edit → Find Next honor Up/Down and Match case without requiring another dialog click.
  */
+@Getter
 public final class FindQuery {
     private final String text;
     private final boolean matchCase;
@@ -15,18 +18,6 @@ public final class FindQuery {
         this.text = Objects.requireNonNullElse(text, "");
         this.matchCase = matchCase;
         this.direction = Objects.requireNonNullElse(direction, SearchDirection.DOWN);
-    }
-
-    public String getText() {
-        return this.text;
-    }
-
-    public boolean isMatchCase() {
-        return this.matchCase;
-    }
-
-    public SearchDirection getDirection() {
-        return this.direction;
     }
 
     /**

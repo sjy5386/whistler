@@ -1,8 +1,15 @@
 package com.sysbot32.whistler.paint;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.experimental.Accessors;
+
 /**
  * Classic Windows XP Paint toolbox (16 tools, left-to-right, top-to-bottom).
  */
+@RequiredArgsConstructor
+@Getter
+@Accessors(fluent = true)
 public enum PaintTool {
     FREE_FORM_SELECT("Free-Form Select"),
     SELECT("Select"),
@@ -22,12 +29,4 @@ public enum PaintTool {
     ROUNDED_RECTANGLE("Rounded Rectangle");
 
     private final String displayName;
-
-    PaintTool(final String displayName) {
-        this.displayName = displayName;
-    }
-
-    public String displayName() {
-        return this.displayName;
-    }
 }

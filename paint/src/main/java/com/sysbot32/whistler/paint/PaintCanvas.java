@@ -1,5 +1,9 @@
 package com.sysbot32.whistler.paint;
 
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
+
 import javax.swing.*;
 import javax.swing.border.LineBorder;
 import java.awt.*;
@@ -29,6 +33,8 @@ public class PaintCanvas extends JComponent {
     }
 
     private Paint paint;
+    @Setter
+    @NonNull
     private BiConsumer<Integer, Integer> statusListener = (x, y) -> {
     };
 
@@ -62,6 +68,7 @@ public class PaintCanvas extends JComponent {
     private static final int MIN_TEXT_W = 40;
     private static final int MIN_TEXT_H = 24;
     private boolean placingText;
+    @Getter
     private boolean editingText;
     private boolean resizingTextBox;
     private ResizeHandle textResizeHandle = ResizeHandle.NONE;
@@ -187,10 +194,6 @@ public class PaintCanvas extends JComponent {
         this.repaint();
     }
 
-    public void setStatusListener(final BiConsumer<Integer, Integer> statusListener) {
-        this.statusListener = Objects.requireNonNull(statusListener);
-    }
-
     public void syncPreferredSize() {
         final int z = this.paint.getZoom();
         final int w = this.resizing ? this.resizePreviewW : this.paint.getWidth();
@@ -221,10 +224,6 @@ public class PaintCanvas extends JComponent {
         if (this.editingText) {
             commitTextEditor();
         }
-    }
-
-    public boolean isEditingText() {
-        return this.editingText;
     }
 
     private void resetTransientState() {

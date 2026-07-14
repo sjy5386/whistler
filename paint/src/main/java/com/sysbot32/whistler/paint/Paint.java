@@ -1,6 +1,8 @@
 package com.sysbot32.whistler.paint;
 
 import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -33,21 +35,34 @@ public class Paint {
     public static final int[] AIRBRUSH_RADII = {8, 16, 24};
 
     private BufferedImage image;
+    @Setter
     private boolean edited = false;
     private Path path = null;
 
+    @Setter
+    @NonNull
     private Color foreground = Color.BLACK;
+    @Setter
+    @NonNull
     private Color background = Color.WHITE;
     private PaintTool tool = PaintTool.PENCIL;
+    @Setter
+    @NonNull
     private FillStyle fillStyle = FillStyle.OUTLINE;
+    @Setter
+    @NonNull
     private BrushShape brushShape = BrushShape.ROUND;
     private int lineWidth = 1;
     private int eraserSize = 8;
     private int brushSize = 4;
     private int airbrushRadius = 16;
     private int zoom = 1;
+    @Setter
     private boolean drawOpaque = true;
+    @Setter
+    @NonNull
     private Font textFont = new Font(Font.SANS_SERIF, Font.PLAIN, 12);
+    @Setter
     private boolean textUnderline = false;
 
     private final SelectionModel selection = new SelectionModel();
@@ -91,10 +106,6 @@ public class Paint {
         this.redoStack.clear();
     }
 
-    public void setEdited(final boolean edited) {
-        this.edited = edited;
-    }
-
     public int getWidth() {
         return this.image.getWidth();
     }
@@ -103,28 +114,12 @@ public class Paint {
         return this.image.getHeight();
     }
 
-    public void setForeground(final Color foreground) {
-        this.foreground = Objects.requireNonNull(foreground);
-    }
-
-    public void setBackground(final Color background) {
-        this.background = Objects.requireNonNull(background);
-    }
-
     public void setTool(final PaintTool tool) {
         commitSelectionIfAny();
         if (tool == PaintTool.PICK_COLOR && this.tool != PaintTool.PICK_COLOR) {
             this.toolBeforePick = this.tool;
         }
         this.tool = Objects.requireNonNull(tool);
-    }
-
-    public void setFillStyle(final FillStyle fillStyle) {
-        this.fillStyle = Objects.requireNonNull(fillStyle);
-    }
-
-    public void setBrushShape(final BrushShape brushShape) {
-        this.brushShape = Objects.requireNonNull(brushShape);
     }
 
     public void setLineWidth(final int lineWidth) {
@@ -182,18 +177,6 @@ public class Paint {
             }
         }
         throw new IllegalArgumentException("Unsupported zoom: " + zoom);
-    }
-
-    public void setDrawOpaque(final boolean drawOpaque) {
-        this.drawOpaque = drawOpaque;
-    }
-
-    public void setTextFont(final Font textFont) {
-        this.textFont = Objects.requireNonNull(textFont);
-    }
-
-    public void setTextUnderline(final boolean textUnderline) {
-        this.textUnderline = textUnderline;
     }
 
     /**
