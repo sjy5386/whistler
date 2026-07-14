@@ -11,13 +11,17 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Classic XP-style Minesweeper shell: counters, face button, cell grid, menus.
  */
 public class MinesweeperFrame extends JFrame {
     private static final String TITLE = "Minesweeper";
-    private static final String CONFIG_DIFFICULTY = "difficulty";
+    private static final String CONFIG_MODE = "difficulty";
+    private static final String CONFIG_CUSTOM_ROWS = "custom.rows";
+    private static final String CONFIG_CUSTOM_COLS = "custom.cols";
+    private static final String CONFIG_CUSTOM_MINES = "custom.mines";
     private static final Color PANEL_GRAY = new Color(0xC0, 0xC0, 0xC0);
 
     private static final Color[] NUMBER_COLORS = {
@@ -33,8 +37,9 @@ public class MinesweeperFrame extends JFrame {
     };
 
     private final Config config;
+    private final BestTimes bestTimes;
+    private BoardSpec boardSpec;
     private Minesweeper game;
-    private Difficulty difficulty;
 
     private final LedCounter mineCounter = new LedCounter();
     private final LedCounter timerCounter = new LedCounter();
@@ -42,6 +47,11 @@ public class MinesweeperFrame extends JFrame {
     private final JPanel boardPanel = new JPanel();
     private final JPanel outerPanel = new JPanel(new BorderLayout(0, 6));
     private CellButton[][] cellButtons;
+
+    private JRadioButtonMenuItem beginnerItem;
+    private JRadioButtonMenuItem intermediateItem;
+    private JRadioButtonMenuItem expertItem;
+    private JRadioButtonMenuItem customItem;
 
     private final Timer swingTimer;
     private int elapsedSeconds;
@@ -51,8 +61,9 @@ public class MinesweeperFrame extends JFrame {
     public MinesweeperFrame(final Config config) {
         super(TITLE);
         this.config = Objects.requireNonNull(config, "config");
-        this.difficulty = this.loadDifficulty();
-        this.game = new Minesweeper(this.difficulty);
+        this.bestTimes = new BestTimes(config);
+        this.boardSpec = this.loadBoardSpec();
+        this.game = new Minesweeper(this.boardSpec.getRows(), this.boardSpec.getCols(), this.boardSpec.getMines());
 
         this.swingTimer = new Timer(1000, e -> {
             if (this.elapsedSeconds < 999) {
@@ -95,7 +106,7 @@ public class MinesweeperFrame extends JFrame {
         this.faceButton.setFocusable(false);
         this.faceButton.setMargin(new Insets(2, 6, 2, 6));
         this.faceButton.setBackground(PANEL_GRAY);
-        this.faceButton.addActionListener(e -> this.newGame(this.difficulty));
+        this.faceButton.addActionListener(e -> this.newGame(this.boardSpec));
 
         final JPanel faceWrap = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
         faceWrap.setOpaque(false);
@@ -124,32 +135,37 @@ public class MinesweeperFrame extends JFrame {
 
         final JMenuItem newItem = new JMenuItem("New", KeyEvent.VK_N);
         newItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
-        newItem.addActionListener(e -> this.newGame(this.difficulty));
+        newItem.addActionListener(e -> this.newGame(this.boardSpec));
 
-        final JRadioButtonMenuItem beginner = new JRadioButtonMenuItem(Difficulty.BEGINNER.getDisplayName());
-        final JRadioButtonMenuItem intermediate = new JRadioButtonMenuItem(Difficulty.INTERMEDIATE.getDisplayName());
-        final JRadioButtonMenuItem expert = new JRadioButtonMenuItem(Difficulty.EXPERT.getDisplayName());
+        this.beginnerItem = new JRadioButtonMenuItem(Difficulty.BEGINNER.getDisplayName());
+        this.intermediateItem = new JRadioButtonMenuItem(Difficulty.INTERMEDIATE.getDisplayName());
+        this.expertItem = new JRadioButtonMenuItem(Difficulty.EXPERT.getDisplayName());
+        this.customItem = new JRadioButtonMenuItem("Custom...");
         final ButtonGroup group = new ButtonGroup();
-        group.add(beginner);
-        group.add(intermediate);
-        group.add(expert);
-        beginner.addActionListener(e -> this.newGame(Difficulty.BEGINNER));
-        intermediate.addActionListener(e -> this.newGame(Difficulty.INTERMEDIATE));
-        expert.addActionListener(e -> this.newGame(Difficulty.EXPERT));
-        switch (this.difficulty) {
-            case INTERMEDIATE -> intermediate.setSelected(true);
-            case EXPERT -> expert.setSelected(true);
-            default -> beginner.setSelected(true);
-        }
+        group.add(this.beginnerItem);
+        group.add(this.intermediateItem);
+        group.add(this.expertItem);
+        group.add(this.customItem);
+
+        this.beginnerItem.addActionListener(e -> this.newGame(BoardSpec.of(Difficulty.BEGINNER)));
+        this.intermediateItem.addActionListener(e -> this.newGame(BoardSpec.of(Difficulty.INTERMEDIATE)));
+        this.expertItem.addActionListener(e -> this.newGame(BoardSpec.of(Difficulty.EXPERT)));
+        this.customItem.addActionListener(e -> this.promptCustomField());
+
+        final JMenuItem bestTimesItem = new JMenuItem("Best Times...", KeyEvent.VK_T);
+        bestTimesItem.addActionListener(e -> BestTimesDialog.show(this, this.bestTimes));
 
         final JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
         exitItem.addActionListener(e -> this.exit());
 
         gameMenu.add(newItem);
         gameMenu.addSeparator();
-        gameMenu.add(beginner);
-        gameMenu.add(intermediate);
-        gameMenu.add(expert);
+        gameMenu.add(this.beginnerItem);
+        gameMenu.add(this.intermediateItem);
+        gameMenu.add(this.expertItem);
+        gameMenu.add(this.customItem);
+        gameMenu.addSeparator();
+        gameMenu.add(bestTimesItem);
         gameMenu.addSeparator();
         gameMenu.add(exitItem);
 
@@ -158,7 +174,8 @@ public class MinesweeperFrame extends JFrame {
         final JMenuItem aboutItem = new JMenuItem("About Minesweeper...", KeyEvent.VK_A);
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
                 this,
-                "Minesweeper\nWhistler — Windows XP classic reimplementation",
+                "Minesweeper\nWhistler — Windows XP classic reimplementation\n\n"
+                        + "Left-click: open\nRight-click: flag\nF2: new game",
                 "About Minesweeper",
                 JOptionPane.INFORMATION_MESSAGE
         ));
@@ -166,7 +183,17 @@ public class MinesweeperFrame extends JFrame {
 
         menuBar.add(gameMenu);
         menuBar.add(helpMenu);
+        this.syncDifficultyMenu();
         return menuBar;
+    }
+
+    private void promptCustomField() {
+        final Optional<BoardSpec> result = CustomFieldDialog.show(this, this.boardSpec);
+        if (result.isEmpty()) {
+            this.syncDifficultyMenu();
+            return;
+        }
+        this.newGame(result.get());
     }
 
     private void rebuildBoard() {
@@ -184,30 +211,30 @@ public class MinesweeperFrame extends JFrame {
         this.boardPanel.repaint();
     }
 
-    private void newGame(final Difficulty difficulty) {
+    private void newGame(final BoardSpec boardSpec) {
         this.stopTimer(true);
-        this.difficulty = difficulty;
-        this.saveDifficulty();
-        this.game = new Minesweeper(difficulty);
+        this.boardSpec = boardSpec;
+        this.saveBoardSpec();
+        this.game = new Minesweeper(boardSpec.getRows(), boardSpec.getCols(), boardSpec.getMines());
         this.mouseDownOnCell = false;
         this.rebuildBoard();
         this.refreshUi();
         this.pack();
-        // keep radio selection in sync when New is pressed at current difficulty
         this.syncDifficultyMenu();
     }
 
     private void syncDifficultyMenu() {
-        final JMenuBar bar = this.getJMenuBar();
-        if (bar == null || bar.getMenuCount() == 0) {
+        if (this.beginnerItem == null) {
             return;
         }
-        final JMenu gameMenu = bar.getMenu(0);
-        for (int i = 0; i < gameMenu.getItemCount(); i++) {
-            final JMenuItem item = gameMenu.getItem(i);
-            if (item instanceof JRadioButtonMenuItem radio) {
-                radio.setSelected(radio.getText().equals(this.difficulty.getDisplayName()));
-            }
+        if (this.boardSpec.isCustom()) {
+            this.customItem.setSelected(true);
+            return;
+        }
+        switch (this.boardSpec.getDifficulty()) {
+            case INTERMEDIATE -> this.intermediateItem.setSelected(true);
+            case EXPERT -> this.expertItem.setSelected(true);
+            default -> this.beginnerItem.setSelected(true);
         }
     }
 
@@ -226,7 +253,7 @@ public class MinesweeperFrame extends JFrame {
             this.updateFace();
             return;
         }
-        if (!this.isOverCell(row, col, e)) {
+        if (!this.isOverCell(e)) {
             this.updateFace();
             return;
         }
@@ -235,7 +262,10 @@ public class MinesweeperFrame extends JFrame {
             if (changed) {
                 this.maybeStartTimer();
                 this.refreshUi();
-                if (this.game.getStatus() == GameStatus.WON || this.game.getStatus() == GameStatus.LOST) {
+                if (this.game.getStatus() == GameStatus.WON) {
+                    this.stopTimer(false);
+                    this.handleWin();
+                } else if (this.game.getStatus() == GameStatus.LOST) {
                     this.stopTimer(false);
                 }
             } else {
@@ -252,15 +282,36 @@ public class MinesweeperFrame extends JFrame {
         }
     }
 
-    private boolean isOverCell(final int row, final int col, final MouseEvent e) {
+    private void handleWin() {
+        if (!this.boardSpec.tracksBestTime()) {
+            return;
+        }
+        final Difficulty difficulty = this.boardSpec.getDifficulty();
+        if (!this.bestTimes.isRecord(difficulty, this.elapsedSeconds)) {
+            return;
+        }
+        final String name = JOptionPane.showInputDialog(
+                this,
+                "You have the fastest time for " + difficulty.getDisplayName() + " level.\n"
+                        + "Please enter your name.",
+                "Congratulations",
+                JOptionPane.QUESTION_MESSAGE
+        );
+        this.bestTimes.setRecord(
+                difficulty,
+                this.elapsedSeconds,
+                name == null ? BestTimes.DEFAULT_NAME : name
+        );
+        BestTimesDialog.show(this, this.bestTimes);
+    }
+
+    private boolean isOverCell(final MouseEvent e) {
         final Component source = (Component) e.getSource();
         final Point p = e.getPoint();
-        return p.x >= 0 && p.y >= 0 && p.x < source.getWidth() && p.y < source.getHeight()
-                && row >= 0 && col >= 0;
+        return p.x >= 0 && p.y >= 0 && p.x < source.getWidth() && p.y < source.getHeight();
     }
 
     private void maybeStartTimer() {
-        // Classic XP: timer starts when the first cell is opened (mines placed).
         if (!this.timerRunning && this.game.isMinesPlaced()) {
             this.timerRunning = true;
             this.swingTimer.start();
@@ -301,23 +352,40 @@ public class MinesweeperFrame extends JFrame {
         }
     }
 
-    private Difficulty loadDifficulty() {
-        final String value = this.config.get(CONFIG_DIFFICULTY, Difficulty.BEGINNER.name());
+    private BoardSpec loadBoardSpec() {
+        final String mode = this.config.get(CONFIG_MODE, Difficulty.BEGINNER.name());
+        if ("CUSTOM".equals(mode)) {
+            try {
+                final int rows = Integer.parseInt(this.config.get(CONFIG_CUSTOM_ROWS, "9"));
+                final int cols = Integer.parseInt(this.config.get(CONFIG_CUSTOM_COLS, "9"));
+                final int mines = Integer.parseInt(this.config.get(CONFIG_CUSTOM_MINES, "10"));
+                return BoardSpec.custom(rows, cols, mines);
+            } catch (final RuntimeException e) {
+                return BoardSpec.of(Difficulty.BEGINNER);
+            }
+        }
         try {
-            return Difficulty.valueOf(value);
+            return BoardSpec.of(Difficulty.valueOf(mode));
         } catch (final IllegalArgumentException e) {
-            return Difficulty.BEGINNER;
+            return BoardSpec.of(Difficulty.BEGINNER);
         }
     }
 
-    private void saveDifficulty() {
-        this.config.set(CONFIG_DIFFICULTY, this.difficulty.name());
+    private void saveBoardSpec() {
+        if (this.boardSpec.isCustom()) {
+            this.config.set(CONFIG_MODE, "CUSTOM");
+            this.config.set(CONFIG_CUSTOM_ROWS, String.valueOf(this.boardSpec.getRows()));
+            this.config.set(CONFIG_CUSTOM_COLS, String.valueOf(this.boardSpec.getCols()));
+            this.config.set(CONFIG_CUSTOM_MINES, String.valueOf(this.boardSpec.getMines()));
+        } else {
+            this.config.set(CONFIG_MODE, this.boardSpec.getDifficulty().name());
+        }
         this.config.save();
     }
 
     private void exit() {
         this.stopTimer(false);
-        this.saveDifficulty();
+        this.saveBoardSpec();
         this.dispose();
     }
 
