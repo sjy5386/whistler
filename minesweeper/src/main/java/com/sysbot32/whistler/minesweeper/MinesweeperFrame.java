@@ -175,7 +175,7 @@ public class MinesweeperFrame extends JFrame {
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
                 this,
                 "Minesweeper\nWhistler — Windows XP classic reimplementation\n\n"
-                        + "Left-click: open\nRight-click: flag\nF2: new game",
+                        + "Left-click: open\nRight-click: flag / ? / clear\nF2: new game",
                 "About Minesweeper",
                 JOptionPane.INFORMATION_MESSAGE
         ));
@@ -454,6 +454,9 @@ public class MinesweeperFrame extends JFrame {
                         this.setText("✗");
                         this.setForeground(Color.RED);
                     }
+                } else if (cell.isQuestionMarked()) {
+                    this.setText("?");
+                    this.setForeground(Color.BLACK);
                 } else if (status == GameStatus.LOST && cell.isMine()) {
                     this.setBorder(BorderFactory.createLineBorder(new Color(0x80, 0x80, 0x80)));
                     this.setText("✱");

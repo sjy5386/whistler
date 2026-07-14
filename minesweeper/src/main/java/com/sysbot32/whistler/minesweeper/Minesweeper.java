@@ -9,8 +9,8 @@ import java.util.Objects;
 import java.util.Random;
 
 /**
- * Pure Minesweeper rules: first click is always safe, left-open / flag toggle,
- * flood-fill zeros, win when every non-mine cell is open.
+ * Pure Minesweeper rules: first click is always safe, left-open / mark cycle
+ * (flag → ? → clear), flood-fill zeros, win when every non-mine cell is open.
  */
 @Getter
 public class Minesweeper {
@@ -89,6 +89,10 @@ public class Minesweeper {
         if (cell.isOpen() || cell.isFlagged()) {
             return false;
         }
+        // Left-click may open a question-marked cell (classic XP).
+        if (cell.isQuestionMarked()) {
+            cell.clearQuestionMark();
+        }
 
         if (!this.minesPlaced) {
             this.placeMines(row, col);
@@ -113,9 +117,10 @@ public class Minesweeper {
     }
 
     /**
-     * Toggles a flag on a covered cell. Ignored after the game ends or on open cells.
+     * Cycles marks on a covered cell: none → flag → question → none.
+     * Only flags affect the remaining-mine counter.
      *
-     * @return {@code true} if the flag state changed
+     * @return {@code true} if the mark state changed
      */
     public boolean toggleFlag(final int row, final int col) {
         this.checkBounds(row, col);
@@ -127,7 +132,7 @@ public class Minesweeper {
             return false;
         }
         final boolean wasFlagged = cell.isFlagged();
-        cell.toggleFlag();
+        cell.cycleMark();
         if (cell.isFlagged() && !wasFlagged) {
             this.flagCount++;
         } else if (!cell.isFlagged() && wasFlagged) {
@@ -216,7 +221,8 @@ public class Minesweeper {
                     continue;
                 }
                 final Cell neighbor = this.cells[nr][nc];
-                if (neighbor.isOpen() || neighbor.isFlagged() || neighbor.isMine()) {
+                if (neighbor.isOpen() || neighbor.isFlagged() || neighbor.isQuestionMarked()
+                        || neighbor.isMine()) {
                     continue;
                 }
                 this.openSafeCell(nr, nc);
@@ -231,7 +237,7 @@ public class Minesweeper {
 
     private void openSafeCell(final int row, final int col) {
         final Cell cell = this.cells[row][col];
-        if (cell.isOpen() || cell.isFlagged() || cell.isMine()) {
+        if (cell.isOpen() || cell.isFlagged() || cell.isQuestionMarked() || cell.isMine()) {
             return;
         }
         cell.open();
@@ -254,7 +260,7 @@ public class Minesweeper {
             for (int c = 0; c < this.cols; c++) {
                 final Cell cell = this.cells[r][c];
                 if (cell.isMine() && !cell.isFlagged()) {
-                    cell.toggleFlag();
+                    cell.forceFlag();
                     this.flagCount++;
                 }
             }
