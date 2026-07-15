@@ -35,7 +35,10 @@ public class FreeCellFrame extends JFrame {
     static final int CARD_WIDTH = 72;
     static final int CARD_HEIGHT = 100;
     static final int CARD_GAP = 8;
+    /** Gap between free-cell group and foundation group (XP logo sits here). */
+    static final int TOP_CENTER_GAP = 56;
     static final int CASCADE_OVERLAP = 24;
+    static final int KING_BADGE_SIZE = 44;
 
     private final Config config;
     private FreeCellGame game;
@@ -278,11 +281,14 @@ public class FreeCellFrame extends JFrame {
         private Selection dragSelection;
         private List<Card> dragCards = List.of();
         private boolean dragMoved;
+        /** Cursor position for king eye-tracking (null when mouse left the board). */
+        private Point cursorPoint;
 
         BoardPanel() {
             final MouseAdapter mouse = new MouseAdapter() {
                 @Override
                 public void mousePressed(final MouseEvent e) {
+                    BoardPanel.this.cursorPoint = e.getPoint();
                     if (e.getButton() != MouseEvent.BUTTON1 || FreeCellFrame.this.game.isWon()) {
                         return;
                     }
@@ -303,7 +309,9 @@ public class FreeCellFrame extends JFrame {
 
                 @Override
                 public void mouseDragged(final MouseEvent e) {
+                    BoardPanel.this.cursorPoint = e.getPoint();
                     if (BoardPanel.this.dragSelection == null) {
+                        BoardPanel.this.repaintKingBadge();
                         return;
                     }
                     if (BoardPanel.this.pressPoint != null) {
@@ -316,11 +324,32 @@ public class FreeCellFrame extends JFrame {
                     if (BoardPanel.this.dragMoved) {
                         BoardPanel.this.dragPoint = e.getPoint();
                         BoardPanel.this.repaint();
+                    } else {
+                        BoardPanel.this.repaintKingBadge();
                     }
                 }
 
                 @Override
+                public void mouseMoved(final MouseEvent e) {
+                    BoardPanel.this.cursorPoint = e.getPoint();
+                    BoardPanel.this.repaintKingBadge();
+                }
+
+                @Override
+                public void mouseEntered(final MouseEvent e) {
+                    BoardPanel.this.cursorPoint = e.getPoint();
+                    BoardPanel.this.repaintKingBadge();
+                }
+
+                @Override
+                public void mouseExited(final MouseEvent e) {
+                    BoardPanel.this.cursorPoint = null;
+                    BoardPanel.this.repaintKingBadge();
+                }
+
+                @Override
                 public void mouseReleased(final MouseEvent e) {
+                    BoardPanel.this.cursorPoint = e.getPoint();
                     if (e.getButton() != MouseEvent.BUTTON1) {
                         return;
                     }
@@ -346,6 +375,12 @@ public class FreeCellFrame extends JFrame {
             };
             this.addMouseListener(mouse);
             this.addMouseMotionListener(mouse);
+        }
+
+        private void repaintKingBadge() {
+            final Rectangle badge = this.computeLayout().kingBadge();
+            // Slightly inflate so pupil movement doesn't leave trails
+            this.repaint(badge.x - 2, badge.y - 2, badge.width + 4, badge.height + 4);
         }
 
         void clearDrag() {
@@ -424,9 +459,15 @@ public class FreeCellFrame extends JFrame {
 
         @Override
         public Dimension getPreferredSize() {
-            final int width = FreeCellGame.CASCADE_COUNT * CARD_WIDTH
-                    + (FreeCellGame.CASCADE_COUNT - 1) * CARD_GAP
-                    + 24;
+            // Top row is wider: free cells + king gap + foundations
+            final int topWidth = FreeCellGame.FREE_CELL_COUNT * CARD_WIDTH
+                    + (FreeCellGame.FREE_CELL_COUNT - 1) * CARD_GAP
+                    + TOP_CENTER_GAP
+                    + FreeCellGame.FOUNDATION_COUNT * CARD_WIDTH
+                    + (FreeCellGame.FOUNDATION_COUNT - 1) * CARD_GAP;
+            final int cascadeWidth = FreeCellGame.CASCADE_COUNT * CARD_WIDTH
+                    + (FreeCellGame.CASCADE_COUNT - 1) * CARD_GAP;
+            final int width = Math.max(topWidth, cascadeWidth) + 24;
             final int height = CARD_HEIGHT + 24 + 12 * CASCADE_OVERLAP + CARD_HEIGHT + 24;
             return new Dimension(width, height);
         }
@@ -460,6 +501,9 @@ public class FreeCellFrame extends JFrame {
                     }
                 }
             }
+
+            // XP-style king badge between free cells and foundations
+            this.paintKingBadge(g2, layout.kingBadge());
 
             // Foundations
             for (int i = 0; i < FreeCellGame.FOUNDATION_COUNT; i++) {
@@ -526,6 +570,80 @@ public class FreeCellFrame extends JFrame {
             }
         }
 
+        /**
+         * Decorative king face between free cells and foundations (classic MS FreeCell chrome).
+         * Not interactive — pure ornament.
+         */
+        private void paintKingBadge(final Graphics2D g2, final Rectangle r) {
+            final int x = r.x;
+            final int y = r.y;
+            final int s = r.width;
+
+            // Raised tile
+            g2.setColor(new Color(0x00, 0x4A, 0x00));
+            g2.fillRoundRect(x, y, s, s, 6, 6);
+            g2.setColor(new Color(0x2A, 0x7A, 0x2A));
+            g2.drawRoundRect(x, y, s - 1, s - 1, 6, 6);
+            g2.setColor(new Color(0x00, 0x30, 0x00));
+            g2.drawRoundRect(x + 1, y + 1, s - 3, s - 3, 5, 5);
+
+            // Inner face card
+            final int inset = 4;
+            final int ix = x + inset;
+            final int iy = y + inset;
+            final int iw = s - inset * 2;
+            final int ih = s - inset * 2;
+            g2.setColor(new Color(0xFF, 0xF8, 0xDC));
+            g2.fillRoundRect(ix, iy, iw, ih, 4, 4);
+            g2.setColor(new Color(0xC9, 0xA2, 0x27));
+            g2.drawRoundRect(ix, iy, iw - 1, ih - 1, 4, 4);
+
+            final int cx = ix + iw / 2;
+            final int cy = iy + ih / 2;
+
+            // Crown
+            final int crownY = iy + 3;
+            final int[] cxPts = {cx - 10, cx - 6, cx - 3, cx, cx + 3, cx + 6, cx + 10, cx + 10, cx - 10};
+            final int[] cyPts = {crownY + 8, crownY + 2, crownY + 7, crownY + 1, crownY + 7, crownY + 2, crownY + 8, crownY + 10, crownY + 10};
+            g2.setColor(new Color(0xE8, 0xC4, 0x00));
+            g2.fillPolygon(cxPts, cyPts, cxPts.length);
+            g2.setColor(new Color(0xB8, 0x86, 0x0B));
+            g2.drawPolygon(cxPts, cyPts, cxPts.length);
+            g2.setColor(new Color(0xDC, 0x14, 0x3C));
+            g2.fillOval(cx - 2, crownY, 4, 4);
+
+            // Face
+            g2.setColor(new Color(0xFF, 0xE0, 0xBD));
+            g2.fillOval(cx - 9, cy - 4, 18, 16);
+
+            // Eyes that follow the cursor (classic FreeCell easter egg)
+            final int eyeY = cy;
+            final int leftEyeX = cx - 5;
+            final int rightEyeX = cx + 2;
+            final int eyeW = 5;
+            final int eyeH = 5;
+            g2.setColor(Color.WHITE);
+            g2.fillOval(leftEyeX - 1, eyeY - 1, eyeW, eyeH);
+            g2.fillOval(rightEyeX - 1, eyeY - 1, eyeW, eyeH);
+
+            // Classic FreeCell: eyes glance left/right only (no vertical tracking).
+            int pupilDx = 0;
+            if (this.cursorPoint != null) {
+                final double vx = this.cursorPoint.x - cx;
+                if (Math.abs(vx) > 2) {
+                    pupilDx = vx < 0 ? -2 : 2;
+                }
+            }
+            g2.setColor(Color.BLACK);
+            g2.fillOval(leftEyeX + pupilDx, eyeY, 3, 3);
+            g2.fillOval(rightEyeX + pupilDx, eyeY, 3, 3);
+
+            // Mustache / beard
+            g2.setColor(new Color(0x5C, 0x40, 0x33));
+            g2.fillOval(cx - 6, cy + 5, 12, 5);
+            g2.fillOval(cx - 4, cy + 7, 8, 6);
+        }
+
         private void paintCard(final Graphics2D g2, final int x, final int y, final Card card, final boolean selected) {
             g2.setColor(selected ? CARD_SELECTED : CARD_FACE);
             g2.fillRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 10, 10);
@@ -559,29 +677,53 @@ public class FreeCellFrame extends JFrame {
         }
 
         private Layout computeLayout() {
-            final int totalWidth = FreeCellGame.CASCADE_COUNT * CARD_WIDTH
+            final int topWidth = FreeCellGame.FREE_CELL_COUNT * CARD_WIDTH
+                    + (FreeCellGame.FREE_CELL_COUNT - 1) * CARD_GAP
+                    + TOP_CENTER_GAP
+                    + FreeCellGame.FOUNDATION_COUNT * CARD_WIDTH
+                    + (FreeCellGame.FOUNDATION_COUNT - 1) * CARD_GAP;
+            final int cascadeWidth = FreeCellGame.CASCADE_COUNT * CARD_WIDTH
                     + (FreeCellGame.CASCADE_COUNT - 1) * CARD_GAP;
-            final int originX = Math.max(0, (this.getWidth() - totalWidth) / 2);
+            final int boardWidth = Math.max(topWidth, cascadeWidth);
+            final int originX = Math.max(0, (this.getWidth() - boardWidth) / 2);
+            // Center the slightly shorter cascade row under the top row when widths differ
+            final int cascadeOriginX = originX + Math.max(0, (boardWidth - cascadeWidth) / 2);
             final int topY = 4;
             final int cascadeTopY = topY + CARD_HEIGHT + 20;
-            return new Layout(originX, topY, cascadeTopY, totalWidth);
+            return new Layout(originX, cascadeOriginX, topY, cascadeTopY, boardWidth);
         }
 
-        private record Layout(int originX, int topY, int cascadeTopY, int totalWidth) {
+        private record Layout(
+                int originX,
+                int cascadeOriginX,
+                int topY,
+                int cascadeTopY,
+                int boardWidth
+        ) {
             Rectangle freeCell(final int i) {
                 final int x = this.originX + i * (CARD_WIDTH + CARD_GAP);
                 return new Rectangle(x, this.topY, CARD_WIDTH, CARD_HEIGHT);
             }
 
             Rectangle foundation(final int i) {
-                // Right half of top row
-                final int start = this.originX + 4 * (CARD_WIDTH + CARD_GAP);
+                final int freeBlock = FreeCellGame.FREE_CELL_COUNT * CARD_WIDTH
+                        + (FreeCellGame.FREE_CELL_COUNT - 1) * CARD_GAP;
+                final int start = this.originX + freeBlock + TOP_CENTER_GAP;
                 final int x = start + i * (CARD_WIDTH + CARD_GAP);
                 return new Rectangle(x, this.topY, CARD_WIDTH, CARD_HEIGHT);
             }
 
+            Rectangle kingBadge() {
+                final int freeBlock = FreeCellGame.FREE_CELL_COUNT * CARD_WIDTH
+                        + (FreeCellGame.FREE_CELL_COUNT - 1) * CARD_GAP;
+                final int gapStart = this.originX + freeBlock;
+                final int x = gapStart + (TOP_CENTER_GAP - KING_BADGE_SIZE) / 2;
+                final int y = this.topY + (CARD_HEIGHT - KING_BADGE_SIZE) / 2;
+                return new Rectangle(x, y, KING_BADGE_SIZE, KING_BADGE_SIZE);
+            }
+
             int cascadeX(final int i) {
-                return this.originX + i * (CARD_WIDTH + CARD_GAP);
+                return this.cascadeOriginX + i * (CARD_WIDTH + CARD_GAP);
             }
         }
     }
