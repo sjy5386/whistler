@@ -248,9 +248,79 @@ public class FreeCellGame {
     }
 
     public boolean canMove(final PileRef from, final int cardCount, final PileRef to) {
-        if (this.status == GameStatus.WON) {
+        if (this.status != GameStatus.PLAYING) {
             return false;
         }
+        return this.isLegalMove(from, cardCount, to);
+    }
+
+    /**
+     * Whether any legal transfer exists from free cells or cascades.
+     * Used for loss detection (no more moves).
+     */
+    public boolean hasLegalMove() {
+        // Free cells → free cell / foundation / cascade
+        for (int f = 0; f < FREE_CELL_COUNT; f++) {
+            if (this.freeCells[f] == null) {
+                continue;
+            }
+            final PileRef from = PileRef.freeCell(f);
+            if (this.canReachAnyDestination(from, 1)) {
+                return true;
+            }
+        }
+        // Cascades (including multi-card supermoves)
+        for (int c = 0; c < CASCADE_COUNT; c++) {
+            final int maxSel = this.maxSelectableFromCascade(c);
+            for (int count = 1; count <= maxSel; count++) {
+                if (this.canReachAnyDestination(PileRef.cascade(c), count)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * After a successful turn, mark {@link GameStatus#LOST} if no legal moves remain
+     * (and the game is not already won).
+     */
+    public void evaluateLoss() {
+        if (this.status == GameStatus.WON) {
+            return;
+        }
+        if (!this.hasLegalMove()) {
+            this.status = GameStatus.LOST;
+        } else {
+            this.status = GameStatus.PLAYING;
+        }
+    }
+
+    public boolean isLost() {
+        return this.status == GameStatus.LOST;
+    }
+
+    private boolean canReachAnyDestination(final PileRef from, final int cardCount) {
+        for (int i = 0; i < FREE_CELL_COUNT; i++) {
+            if (this.isLegalMove(from, cardCount, PileRef.freeCell(i))) {
+                return true;
+            }
+        }
+        for (int i = 0; i < FOUNDATION_COUNT; i++) {
+            if (this.isLegalMove(from, cardCount, PileRef.foundation(i))) {
+                return true;
+            }
+        }
+        for (int i = 0; i < CASCADE_COUNT; i++) {
+            if (this.isLegalMove(from, cardCount, PileRef.cascade(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Rule check without terminal-status gate (for loss scanning). */
+    private boolean isLegalMove(final PileRef from, final int cardCount, final PileRef to) {
         if (from == null || to == null || from.equals(to) || cardCount < 1) {
             return false;
         }
@@ -271,6 +341,9 @@ public class FreeCellGame {
      * @return {@code true} if the board changed
      */
     public boolean move(final PileRef from, final int cardCount, final PileRef to) {
+        if (this.status != GameStatus.PLAYING) {
+            return false;
+        }
         final Move applied = this.applyMove(from, cardCount, to);
         if (applied == null) {
             return false;
@@ -283,10 +356,9 @@ public class FreeCellGame {
 
     /**
      * Tries to move the single accessible card at {@code from} onto any legal foundation.
-     * Preferred for double-click / auto-move UX.
      */
     public boolean tryMoveToFoundation(final PileRef from) {
-        if (this.status == GameStatus.WON) {
+        if (this.status != GameStatus.PLAYING) {
             return false;
         }
         if (!this.canTake(from, 1)) {
@@ -295,6 +367,30 @@ public class FreeCellGame {
         for (int i = 0; i < FOUNDATION_COUNT; i++) {
             final PileRef foundation = PileRef.foundation(i);
             if (this.move(from, 1, foundation)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Tries to move the single accessible card at {@code from} into the first empty free cell.
+     * Classic FreeCell double-click behavior (cascade tops only — not free-cell to free-cell).
+     */
+    public boolean tryMoveToEmptyFreeCell(final PileRef from) {
+        if (this.status != GameStatus.PLAYING) {
+            return false;
+        }
+        // Already parked in a free cell — double-click must not hop to another free cell.
+        if (from == null || from.getType() == PileType.FREE_CELL) {
+            return false;
+        }
+        if (!this.canTake(from, 1)) {
+            return false;
+        }
+        for (int i = 0; i < FREE_CELL_COUNT; i++) {
+            final PileRef freeCell = PileRef.freeCell(i);
+            if (this.move(from, 1, freeCell)) {
                 return true;
             }
         }
@@ -315,7 +411,11 @@ public class FreeCellGame {
      * @return number of cards moved to foundations
      */
     public int autoMoveToFoundations() {
-        if (this.status == GameStatus.WON) {
+        if (this.status != GameStatus.PLAYING && this.status != GameStatus.LOST) {
+            // Still allow while PLAYING only; LOST/WON skip auto.
+            return 0;
+        }
+        if (this.status == GameStatus.LOST) {
             return 0;
         }
         final List<Move> autos = new ArrayList<>();
@@ -392,12 +492,13 @@ public class FreeCellGame {
     }
 
     public boolean canUndo() {
+        // Win is terminal; loss can still be undone to keep playing.
         return !this.undoStack.isEmpty() && this.status != GameStatus.WON;
     }
 
     /**
      * Undoes the last player step (voluntary move + any auto home transfers in that step).
-     * Win state is not undone once set (game finished).
+     * Win state is not undone once set (game finished). Loss may be cleared.
      *
      * @return {@code true} if a step was undone
      */
@@ -421,7 +522,11 @@ public class FreeCellGame {
      * and win status. Returns the recorded {@link Move}, or {@code null} if illegal.
      */
     private Move applyMove(final PileRef from, final int cardCount, final PileRef to) {
-        if (!this.canMove(from, cardCount, to)) {
+        // applyMove is used by player moves and auto-moves; block only true win.
+        if (this.status == GameStatus.WON) {
+            return null;
+        }
+        if (!this.isLegalMove(from, cardCount, to)) {
             return null;
         }
         final List<Card> moving = this.takeCards(from, cardCount);

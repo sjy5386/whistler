@@ -255,6 +255,32 @@ class FreeCellGameTest {
     }
 
     @Test
+    void tryMoveToEmptyFreeCellParksCascadeTop() {
+        final FreeCellGame game = FreeCellGame.emptyBoard();
+        final Card queen = new Card(Suit.CLUBS, Rank.QUEEN);
+        game.pushCascadeForTest(0, queen);
+        assertTrue(game.tryMoveToEmptyFreeCell(PileRef.cascade(0)));
+        assertEquals(queen, game.getFreeCell(0).orElseThrow());
+        assertTrue(game.getCascade(0).isEmpty());
+        // All free cells full → cannot park
+        game.putFreeCellForTest(1, new Card(Suit.HEARTS, Rank.TWO));
+        game.putFreeCellForTest(2, new Card(Suit.DIAMONDS, Rank.THREE));
+        game.putFreeCellForTest(3, new Card(Suit.SPADES, Rank.FOUR));
+        game.pushCascadeForTest(1, new Card(Suit.HEARTS, Rank.KING));
+        assertFalse(game.tryMoveToEmptyFreeCell(PileRef.cascade(1)));
+    }
+
+    @Test
+    void tryMoveToEmptyFreeCellDoesNotHopBetweenFreeCells() {
+        final FreeCellGame game = FreeCellGame.emptyBoard();
+        final Card king = new Card(Suit.SPADES, Rank.KING);
+        game.putFreeCellForTest(0, king);
+        assertFalse(game.tryMoveToEmptyFreeCell(PileRef.freeCell(0)));
+        assertEquals(king, game.getFreeCell(0).orElseThrow());
+        assertTrue(game.getFreeCell(1).isEmpty());
+    }
+
+    @Test
     void undoRestoresPreviousState() {
         final FreeCellGame game = FreeCellGame.emptyBoard();
         final Card card = new Card(Suit.CLUBS, Rank.QUEEN);
@@ -266,6 +292,32 @@ class FreeCellGameTest {
         assertTrue(game.getFreeCell(2).isEmpty());
         assertEquals(0, game.getMoveCount());
         assertFalse(game.canUndo());
+    }
+
+    @Test
+    void detectsLossWhenNoLegalMovesRemain() {
+        final FreeCellGame game = FreeCellGame.emptyBoard();
+        // Pack all free cells and cascades so nothing can move:
+        // freecells: four kings; cascades: same-color stuck tops that don't connect.
+        game.putFreeCellForTest(0, new Card(Suit.CLUBS, Rank.KING));
+        game.putFreeCellForTest(1, new Card(Suit.DIAMONDS, Rank.KING));
+        game.putFreeCellForTest(2, new Card(Suit.HEARTS, Rank.KING));
+        game.putFreeCellForTest(3, new Card(Suit.SPADES, Rank.KING));
+        // Non-empty cascades with same-color tops that cannot stack on each other
+        // and cannot go to foundation (not aces / not building).
+        game.pushCascadeForTest(0, new Card(Suit.CLUBS, Rank.QUEEN));
+        game.pushCascadeForTest(1, new Card(Suit.SPADES, Rank.QUEEN));
+        game.pushCascadeForTest(2, new Card(Suit.CLUBS, Rank.JACK));
+        game.pushCascadeForTest(3, new Card(Suit.SPADES, Rank.JACK));
+        game.pushCascadeForTest(4, new Card(Suit.CLUBS, Rank.TEN));
+        game.pushCascadeForTest(5, new Card(Suit.SPADES, Rank.TEN));
+        game.pushCascadeForTest(6, new Card(Suit.CLUBS, Rank.NINE));
+        game.pushCascadeForTest(7, new Card(Suit.SPADES, Rank.NINE));
+
+        assertFalse(game.hasLegalMove());
+        game.evaluateLoss();
+        assertTrue(game.isLost());
+        assertEquals(GameStatus.LOST, game.getStatus());
     }
 
     @Test

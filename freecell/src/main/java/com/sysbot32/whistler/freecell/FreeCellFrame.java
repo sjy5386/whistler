@@ -16,13 +16,10 @@ import java.util.Optional;
 
 /**
  * Classic FreeCell shell: free cells + foundations on top, eight cascades below.
- * Interaction: click source then destination, drag-and-drop, double-click to foundation.
+ * Interaction: click source then destination (original style) and/or drag-and-drop;
+ * double-click sends a card to an empty free cell.
  */
 public class FreeCellFrame extends JFrame {
-    private static final String TITLE = "FreeCell";
-    private static final String CONFIG_GAMES_WON = "stats.gamesWon";
-    private static final String CONFIG_GAMES_PLAYED = "stats.gamesPlayed";
-
     private static final Color FELT_GREEN = new Color(0x00, 0x80, 0x00);
     private static final Color PANEL_EDGE = new Color(0x00, 0x60, 0x00);
     private static final Color CARD_FACE = new Color(0xFF, 0xFF, 0xF0);
@@ -41,19 +38,27 @@ public class FreeCellFrame extends JFrame {
     static final int KING_BADGE_SIZE = 44;
 
     private final Config config;
+    private final FreeCellOptions options;
+    private final FreeCellStatistics statistics;
     private FreeCellGame game;
 
     private final BoardPanel boardPanel = new BoardPanel();
     private final JLabel statusLabel = new JLabel(" ");
 
     private Selection selection;
-    private boolean winDialogShown;
+    private boolean endDialogShown;
     private boolean gameCounted;
 
+    private JMenuItem restartItem;
+    private JMenuItem undoItem;
+
     public FreeCellFrame(final Config config) {
-        super(TITLE);
+        super();
         this.config = Objects.requireNonNull(config, "config");
-        this.game = new FreeCellGame();
+        this.options = new FreeCellOptions(this.config);
+        this.statistics = new FreeCellStatistics(this.config);
+        // Classic FreeCell: no deal until the player chooses New Game / Select Game.
+        this.game = FreeCellGame.emptyBoard();
 
         this.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         this.getContentPane().setBackground(FELT_GREEN);
@@ -93,20 +98,36 @@ public class FreeCellFrame extends JFrame {
         newItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
         newItem.addActionListener(e -> this.newGame());
 
-        final JMenuItem selectItem = new JMenuItem("Select Game Number...", KeyEvent.VK_S);
+        final JMenuItem selectItem = new JMenuItem("Select Game...", KeyEvent.VK_S);
         selectItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0));
         selectItem.addActionListener(e -> this.selectGame());
 
-        final JMenuItem undoItem = new JMenuItem("Undo", KeyEvent.VK_U);
-        undoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
-        undoItem.addActionListener(e -> this.undo());
+        this.restartItem = new JMenuItem("Restart Game", KeyEvent.VK_R);
+        this.restartItem.addActionListener(e -> this.restartSameGame());
+
+        this.undoItem = new JMenuItem("Undo", KeyEvent.VK_U);
+        this.undoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F10, 0));
+        this.undoItem.addActionListener(e -> this.undo());
+
+        final JMenuItem statsItem = new JMenuItem("Statistics...", KeyEvent.VK_T);
+        statsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0));
+        statsItem.addActionListener(e -> FreeCellStatisticsDialog.show(this, this.statistics));
+
+        final JMenuItem optionsItem = new JMenuItem("Options...", KeyEvent.VK_O);
+        optionsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0));
+        optionsItem.addActionListener(e -> FreeCellOptionsDialog.show(this, this.options));
 
         final JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
         exitItem.addActionListener(e -> this.exit());
 
         gameMenu.add(newItem);
         gameMenu.add(selectItem);
-        gameMenu.add(undoItem);
+        gameMenu.add(this.restartItem);
+        gameMenu.addSeparator();
+        gameMenu.add(statsItem);
+        gameMenu.add(optionsItem);
+        gameMenu.addSeparator();
+        gameMenu.add(this.undoItem);
         gameMenu.addSeparator();
         gameMenu.add(exitItem);
 
@@ -116,12 +137,15 @@ public class FreeCellFrame extends JFrame {
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
                 this,
                 "FreeCell\nWhistler — Windows XP classic reimplementation\n\n"
-                        + "Click a card, then click a destination (or drag).\n"
-                        + "Double-click: move to foundation if legal.\n"
+                        + "Click a card, then click a destination (original style).\n"
+                        + "Drag-and-drop is also supported.\n"
+                        + "Double-click: move to an empty free cell (if enabled in Options).\n"
                         + "Empty free cells / columns enable supermoves.\n"
                         + "F2: new game (random #1–32000)\n"
-                        + "F3: select game number\n"
-                        + "Ctrl/Cmd+Z: undo",
+                        + "F3: select game\n"
+                        + "F4: statistics\n"
+                        + "F5: options\n"
+                        + "F10: undo",
                 "About FreeCell",
                 JOptionPane.INFORMATION_MESSAGE
         ));
@@ -133,15 +157,31 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void newGame() {
+        if (!this.confirmResignIfNeeded()) {
+            return;
+        }
         this.startGame(new FreeCellGame());
     }
 
+    private void restartSameGame() {
+        if (!this.isGameStarted()) {
+            return;
+        }
+        if (!this.confirmResignIfNeeded()) {
+            return;
+        }
+        this.startGame(new FreeCellGame(this.game.getGameNumber()));
+    }
+
     private void selectGame() {
+        if (!this.confirmResignIfNeeded()) {
+            return;
+        }
         final int current = Math.max(1, this.game.getGameNumber());
         final String input = (String) JOptionPane.showInputDialog(
                 this,
                 "Game number (1–" + NumberedDeal.EXTENDED_MAX_GAME + "):",
-                "Select Game Number",
+                "Select Game",
                 JOptionPane.QUESTION_MESSAGE,
                 null,
                 null,
@@ -155,7 +195,7 @@ public class FreeCellFrame extends JFrame {
         try {
             number = Integer.parseInt(trimmed);
         } catch (final NumberFormatException ex) {
-            JOptionPane.showMessageDialog(this, "Please enter a whole number.", "Select Game Number",
+            JOptionPane.showMessageDialog(this, "Please enter a whole number.", "Select Game",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -163,7 +203,7 @@ public class FreeCellFrame extends JFrame {
             JOptionPane.showMessageDialog(
                     this,
                     "Game number must be between 1 and " + NumberedDeal.EXTENDED_MAX_GAME + ".",
-                    "Select Game Number",
+                    "Select Game",
                     JOptionPane.WARNING_MESSAGE
             );
             return;
@@ -171,14 +211,45 @@ public class FreeCellFrame extends JFrame {
         this.startGame(new FreeCellGame(number));
     }
 
-    private void startGame(final FreeCellGame next) {
-        if (!this.gameCounted && this.game.getMoveCount() > 0 && !this.game.isWon()) {
-            this.incrementStat(CONFIG_GAMES_PLAYED);
-            this.gameCounted = true;
+    /** Whether a numbered deal is on the board (not the idle empty shell). */
+    private boolean isGameStarted() {
+        return this.game.getGameNumber() > 0;
+    }
+
+    /**
+     * @return {@code true} if it is OK to leave the current game
+     */
+    private boolean confirmResignIfNeeded() {
+        // No deal yet — nothing to resign.
+        if (!this.isGameStarted()) {
+            return true;
         }
+        // Classic FreeCell asks even when no moves have been made yet.
+        if (this.gameCounted || this.game.isWon() || this.game.isLost()) {
+            return true;
+        }
+        final int answer = JOptionPane.showConfirmDialog(
+                this,
+                "Do you want to resign this game?",
+                "FreeCell",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+        );
+        if (answer != JOptionPane.YES_OPTION) {
+            return false;
+        }
+        // Resign counts as a loss (classic FreeCell statistics).
+        this.statistics.recordLoss();
+        this.gameCounted = true;
+        return true;
+    }
+
+    private void startGame(final FreeCellGame next) {
+        // Uncounted mid-game leave without resign dialog (should not happen after confirm).
+        this.recordAbandonedIfNeeded();
         this.game = next;
         this.selection = null;
-        this.winDialogShown = false;
+        this.endDialogShown = false;
         this.gameCounted = false;
         this.boardPanel.clearDrag();
         this.refreshStatus();
@@ -187,6 +258,7 @@ public class FreeCellFrame extends JFrame {
 
     private void undo() {
         if (this.game.undo()) {
+            this.endDialogShown = false;
             this.selection = null;
             this.boardPanel.clearDrag();
             this.refreshStatus();
@@ -195,40 +267,74 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void exit() {
-        if (!this.gameCounted && this.game.getMoveCount() > 0 && !this.game.isWon()) {
-            this.incrementStat(CONFIG_GAMES_PLAYED);
-            this.config.save();
+        if (!this.confirmResignIfNeeded()) {
+            return;
         }
+        this.recordAbandonedIfNeeded();
         this.dispose();
     }
 
+    private void recordAbandonedIfNeeded() {
+        if (!this.isGameStarted()) {
+            return;
+        }
+        if (!this.gameCounted && this.game.getMoveCount() > 0
+                && !this.game.isWon() && !this.game.isLost()) {
+            this.statistics.recordAbandoned();
+            this.gameCounted = true;
+        }
+    }
+
     private void refreshStatus() {
-        final String won = this.config.get(CONFIG_GAMES_WON, "0");
-        final String played = this.config.get(CONFIG_GAMES_PLAYED, "0");
+        if (this.restartItem != null) {
+            this.restartItem.setEnabled(this.isGameStarted());
+        }
+        if (this.undoItem != null) {
+            this.undoItem.setEnabled(this.game.canUndo());
+        }
+
+        if (!this.isGameStarted()) {
+            this.setTitle("FreeCell");
+            this.statusLabel.setText(String.format(
+                    "Session %d-%d   Total %d-%d   — Start a game (F2 / F3)",
+                    this.statistics.getSessionWon(),
+                    this.statistics.getSessionLost(),
+                    this.statistics.getTotalWon(),
+                    this.statistics.getTotalLost()
+            ));
+            return;
+        }
+
+        final int gameNumber = this.game.getGameNumber();
+        this.setTitle("FreeCell Game #" + gameNumber);
+
+        final String suffix;
+        if (this.game.isWon()) {
+            suffix = "   — You win!";
+        } else if (this.game.isLost()) {
+            suffix = "   — No more moves";
+        } else {
+            suffix = "";
+        }
         this.statusLabel.setText(String.format(
-                "Moves: %d   Game #%d   Won: %s / Played: %s%s",
+                "Moves: %d   Game #%d   Session %d-%d   Total %d-%d%s",
                 this.game.getMoveCount(),
-                this.game.getGameNumber(),
-                won,
-                played,
-                this.game.isWon() ? "   — You win!" : ""
+                gameNumber,
+                this.statistics.getSessionWon(),
+                this.statistics.getSessionLost(),
+                this.statistics.getTotalWon(),
+                this.statistics.getTotalLost(),
+                suffix
         ));
     }
 
-    private void incrementStat(final String key) {
-        final int value = Integer.parseInt(this.config.get(key, "0"));
-        this.config.set(key, Integer.toString(value + 1));
-        this.config.save();
-    }
-
     private void onWin() {
-        if (this.winDialogShown) {
+        if (this.endDialogShown) {
             return;
         }
-        this.winDialogShown = true;
+        this.endDialogShown = true;
         if (!this.gameCounted) {
-            this.incrementStat(CONFIG_GAMES_PLAYED);
-            this.incrementStat(CONFIG_GAMES_WON);
+            this.statistics.recordWin();
             this.gameCounted = true;
         }
         this.refreshStatus();
@@ -240,37 +346,74 @@ public class FreeCellFrame extends JFrame {
         );
     }
 
-    private void applyMove(final PileRef from, final int cardCount, final PileRef to) {
-        if (this.game.move(from, cardCount, to)) {
-            this.game.autoMoveToFoundations();
-            this.selection = null;
-            this.refreshStatus();
-            this.boardPanel.repaint();
-            if (this.game.isWon()) {
-                this.onWin();
-            }
+    private void onLoss() {
+        if (this.endDialogShown) {
+            return;
+        }
+        this.endDialogShown = true;
+        if (!this.gameCounted) {
+            this.statistics.recordLoss();
+            this.gameCounted = true;
+        }
+        this.refreshStatus();
+        JOptionPane.showMessageDialog(
+                this,
+                "There are no more legal moves.\n\nYou can Undo and try a different line of play.",
+                "FreeCell",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
+    private void finishTurn() {
+        this.game.autoMoveToFoundations();
+        this.game.evaluateLoss();
+        this.selection = null;
+        this.refreshStatus();
+        this.boardPanel.repaint();
+        if (this.game.isWon()) {
+            this.onWin();
+        } else if (this.game.isLost()) {
+            this.onLoss();
         }
     }
 
+    private void applyMove(final PileRef from, final int cardCount, final PileRef to) {
+        if (this.game.move(from, cardCount, to)) {
+            this.finishTurn();
+        } else {
+            this.notifyIllegalMove();
+        }
+    }
+
+    private void notifyIllegalMove() {
+        if (!this.options.isMessagesOnIllegalMoves() || this.game.isWon() || this.game.isLost()) {
+            return;
+        }
+        JOptionPane.showMessageDialog(
+                this,
+                "That move is not allowed.",
+                "FreeCell",
+                JOptionPane.WARNING_MESSAGE
+        );
+    }
+
     private void trySelectOrMove(final Hit hit, final boolean doubleClick) {
-        if (hit == null || this.game.isWon()) {
+        if (hit == null || !this.isGameStarted() || this.game.isWon() || this.game.isLost()) {
             return;
         }
         if (doubleClick) {
+            if (!this.options.isDoubleClickToFreeCell()) {
+                return;
+            }
+            // Classic FreeCell: double-click parks a card in an empty free cell.
             final PileRef from = hit.pile();
-            final int count = hit.cardCount();
-            if (count == 1 && this.game.tryMoveToFoundation(from)) {
-                this.game.autoMoveToFoundations();
-                this.selection = null;
-                this.refreshStatus();
-                this.boardPanel.repaint();
-                if (this.game.isWon()) {
-                    this.onWin();
-                }
+            if (hit.cardCount() == 1 && this.game.tryMoveToEmptyFreeCell(from)) {
+                this.finishTurn();
             }
             return;
         }
 
+        // Click-source / click-destination (original FreeCell interaction).
         if (this.selection == null) {
             if (hit.cardCount() > 0 && this.isSelectable(hit)) {
                 this.selection = new Selection(hit.pile(), hit.cardCount());
@@ -291,12 +434,14 @@ public class FreeCellFrame extends JFrame {
             return;
         }
 
+        // Destination may be empty (free cell / cascade / foundation) — cardCount can be 0.
         if (this.game.canMove(this.selection.pile(), this.selection.cardCount(), hit.pile())) {
             this.applyMove(this.selection.pile(), this.selection.cardCount(), hit.pile());
         } else if (hit.cardCount() > 0 && this.isSelectable(hit)) {
             this.selection = new Selection(hit.pile(), hit.cardCount());
             this.boardPanel.repaint();
         } else {
+            this.notifyIllegalMove();
             this.selection = null;
             this.boardPanel.repaint();
         }
@@ -335,18 +480,27 @@ public class FreeCellFrame extends JFrame {
                 @Override
                 public void mousePressed(final MouseEvent e) {
                     BoardPanel.this.cursorPoint = e.getPoint();
-                    if (e.getButton() != MouseEvent.BUTTON1 || FreeCellFrame.this.game.isWon()) {
+                    if (e.getButton() != MouseEvent.BUTTON1
+                            || !FreeCellFrame.this.isGameStarted()
+                            || FreeCellFrame.this.game.isWon()
+                            || FreeCellFrame.this.game.isLost()) {
                         return;
                     }
                     BoardPanel.this.pressPoint = e.getPoint();
                     BoardPanel.this.dragMoved = false;
                     final Hit hit = BoardPanel.this.hitTest(e.getX(), e.getY());
+                    // Prepare drag only from a selectable card; click-to-empty destinations
+                    // are handled on release without clearing an existing selection.
                     if (hit != null && hit.cardCount() > 0 && FreeCellFrame.this.isSelectable(hit)) {
                         BoardPanel.this.dragSelection = new Selection(hit.pile(), hit.cardCount());
                         BoardPanel.this.dragCards = BoardPanel.this.cardsFor(hit.pile(), hit.cardCount());
                         BoardPanel.this.dragPoint = e.getPoint();
-                        FreeCellFrame.this.selection = BoardPanel.this.dragSelection;
-                        BoardPanel.this.repaint();
+                        // Do not steal an existing click-source selection until drag starts;
+                        // press on another card will re-select on release if not dragged.
+                        if (FreeCellFrame.this.selection == null) {
+                            FreeCellFrame.this.selection = BoardPanel.this.dragSelection;
+                            BoardPanel.this.repaint();
+                        }
                     } else {
                         BoardPanel.this.dragSelection = null;
                         BoardPanel.this.dragCards = List.of();
@@ -368,6 +522,8 @@ public class FreeCellFrame extends JFrame {
                         }
                     }
                     if (BoardPanel.this.dragMoved) {
+                        // Promote drag selection once movement exceeds threshold.
+                        FreeCellFrame.this.selection = BoardPanel.this.dragSelection;
                         BoardPanel.this.dragPoint = e.getPoint();
                         BoardPanel.this.repaint();
                     } else {
@@ -409,6 +565,9 @@ public class FreeCellFrame extends JFrame {
                                 && FreeCellFrame.this.game.canMove(src.pile(), src.cardCount(), dest.pile())) {
                             FreeCellFrame.this.applyMove(src.pile(), src.cardCount(), dest.pile());
                         } else {
+                            if (dest != null) {
+                                FreeCellFrame.this.notifyIllegalMove();
+                            }
                             FreeCellFrame.this.selection = src;
                             BoardPanel.this.repaint();
                         }
@@ -702,24 +861,188 @@ public class FreeCellFrame extends JFrame {
             final String rank = card.getRank().getLabel();
             final String suit = card.getSuit().getSymbol();
 
-            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
-            g2.drawString(rank, x + 6, y + 18);
-            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            g2.drawString(suit, x + 6, y + 34);
+            // Top-left index
+            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+            g2.drawString(rank, x + 5, y + 15);
+            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+            g2.drawString(suit, x + 5, y + 28);
 
-            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 28));
+            // Bottom-right index (upright, classic small-card feel)
+            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+            final FontMetrics fmRank = g2.getFontMetrics();
+            g2.drawString(rank, x + CARD_WIDTH - 5 - fmRank.stringWidth(rank), y + CARD_HEIGHT - 18);
+            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+            final FontMetrics fmSuit = g2.getFontMetrics();
+            g2.drawString(suit, x + CARD_WIDTH - 5 - fmSuit.stringWidth(suit), y + CARD_HEIGHT - 5);
+
+            final Rank r = card.getRank();
+            if (r == Rank.ACE) {
+                g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 36));
+                final FontMetrics fm = g2.getFontMetrics();
+                g2.drawString(suit, x + (CARD_WIDTH - fm.stringWidth(suit)) / 2,
+                        y + CARD_HEIGHT / 2 + fm.getAscent() / 2 - 6);
+            } else if (r.ordinal() >= Rank.TWO.ordinal() && r.ordinal() <= Rank.TEN.ordinal()) {
+                this.paintPips(g2, x, y, card);
+            } else {
+                this.paintFaceCard(g2, x, y, card);
+            }
+        }
+
+        /**
+         * Standard pip layout for 2–10 (count matches rank).
+         * Coordinates are fractions of the card interior.
+         */
+        private void paintPips(final Graphics2D g2, final int x, final int y, final Card card) {
+            final String suit = card.getSuit().getSymbol();
+            final int n = card.getRank().getValue();
+            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, n >= 9 ? 13 : 15));
             final FontMetrics fm = g2.getFontMetrics();
-            final String center = suit;
-            g2.drawString(center, x + (CARD_WIDTH - fm.stringWidth(center)) / 2,
-                    y + CARD_HEIGHT / 2 + fm.getAscent() / 2 - 4);
+            final int sw = fm.stringWidth(suit);
+            final int sh = fm.getAscent();
 
-            // Bottom-right corner (mirrored feel)
-            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
-            final FontMetrics fm2 = g2.getFontMetrics();
-            g2.drawString(rank, x + CARD_WIDTH - 6 - fm2.stringWidth(rank), y + CARD_HEIGHT - 20);
-            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            final FontMetrics fm3 = g2.getFontMetrics();
-            g2.drawString(suit, x + CARD_WIDTH - 6 - fm3.stringWidth(suit), y + CARD_HEIGHT - 6);
+            // Relative positions inside the face (0..1), classic pip grid.
+            final float[][] pts = switch (n) {
+                case 2 -> new float[][]{{0.5f, 0.28f}, {0.5f, 0.72f}};
+                case 3 -> new float[][]{{0.5f, 0.26f}, {0.5f, 0.50f}, {0.5f, 0.74f}};
+                case 4 -> new float[][]{
+                        {0.32f, 0.28f}, {0.68f, 0.28f},
+                        {0.32f, 0.72f}, {0.68f, 0.72f}
+                };
+                case 5 -> new float[][]{
+                        {0.32f, 0.28f}, {0.68f, 0.28f},
+                        {0.50f, 0.50f},
+                        {0.32f, 0.72f}, {0.68f, 0.72f}
+                };
+                case 6 -> new float[][]{
+                        {0.32f, 0.28f}, {0.68f, 0.28f},
+                        {0.32f, 0.50f}, {0.68f, 0.50f},
+                        {0.32f, 0.72f}, {0.68f, 0.72f}
+                };
+                case 7 -> new float[][]{
+                        {0.32f, 0.26f}, {0.68f, 0.26f},
+                        {0.50f, 0.38f},
+                        {0.32f, 0.50f}, {0.68f, 0.50f},
+                        {0.32f, 0.74f}, {0.68f, 0.74f}
+                };
+                case 8 -> new float[][]{
+                        {0.32f, 0.24f}, {0.68f, 0.24f},
+                        {0.50f, 0.36f},
+                        {0.32f, 0.48f}, {0.68f, 0.48f},
+                        {0.50f, 0.60f},
+                        {0.32f, 0.76f}, {0.68f, 0.76f}
+                };
+                case 9 -> new float[][]{
+                        {0.32f, 0.24f}, {0.68f, 0.24f},
+                        {0.32f, 0.40f}, {0.68f, 0.40f},
+                        {0.50f, 0.50f},
+                        {0.32f, 0.60f}, {0.68f, 0.60f},
+                        {0.32f, 0.76f}, {0.68f, 0.76f}
+                };
+                case 10 -> new float[][]{
+                        {0.32f, 0.22f}, {0.68f, 0.22f},
+                        {0.50f, 0.32f},
+                        {0.32f, 0.40f}, {0.68f, 0.40f},
+                        {0.32f, 0.58f}, {0.68f, 0.58f},
+                        {0.50f, 0.68f},
+                        {0.32f, 0.78f}, {0.68f, 0.78f}
+                };
+                default -> new float[0][];
+            };
+
+            final int left = x + 14;
+            final int top = y + 18;
+            final int w = CARD_WIDTH - 28;
+            final int h = CARD_HEIGHT - 36;
+            for (final float[] p : pts) {
+                final int px = left + Math.round(p[0] * w) - sw / 2;
+                final int py = top + Math.round(p[1] * h) + sh / 3;
+                g2.drawString(suit, px, py);
+            }
+        }
+
+        /** Simple Swing face art for J / Q / K (no bitmaps). */
+        private void paintFaceCard(final Graphics2D g2, final int x, final int y, final Card card) {
+            final Color ink = card.isRed() ? RED_INK : BLACK_INK;
+            final int cx = x + CARD_WIDTH / 2;
+            final int cy = y + CARD_HEIGHT / 2 + 4;
+
+            // Panel behind figure
+            g2.setColor(new Color(0xF5, 0xEB, 0xD0));
+            g2.fillRoundRect(x + 16, y + 30, CARD_WIDTH - 32, CARD_HEIGHT - 48, 8, 8);
+            g2.setColor(ink);
+            g2.drawRoundRect(x + 16, y + 30, CARD_WIDTH - 32, CARD_HEIGHT - 48, 8, 8);
+
+            // Head
+            g2.setColor(new Color(0xFF, 0xE0, 0xBD));
+            g2.fillOval(cx - 10, cy - 22, 20, 18);
+            g2.setColor(ink);
+            g2.drawOval(cx - 10, cy - 22, 20, 18);
+
+            // Eyes
+            g2.fillOval(cx - 5, cy - 15, 3, 3);
+            g2.fillOval(cx + 2, cy - 15, 3, 3);
+
+            switch (card.getRank()) {
+                case JACK -> {
+                    // Cap
+                    g2.setColor(ink);
+                    g2.fillRect(cx - 11, cy - 24, 22, 5);
+                    g2.fillRect(cx - 8, cy - 28, 10, 5);
+                    // Body
+                    g2.setColor(new Color(0x3A, 0x6E, 0xA5));
+                    g2.fillRoundRect(cx - 12, cy - 4, 24, 22, 6, 6);
+                    g2.setColor(ink);
+                    g2.drawRoundRect(cx - 12, cy - 4, 24, 22, 6, 6);
+                    g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+                    g2.drawString("J", cx - 3, cy + 10);
+                }
+                case QUEEN -> {
+                    // Crown
+                    g2.setColor(new Color(0xE8, 0xC4, 0x00));
+                    final int[] xs = {cx - 11, cx - 7, cx - 3, cx, cx + 3, cx + 7, cx + 11, cx + 11, cx - 11};
+                    final int[] ys = {cy - 20, cy - 28, cy - 22, cy - 29, cy - 22, cy - 28, cy - 20, cy - 18, cy - 18};
+                    g2.fillPolygon(xs, ys, xs.length);
+                    g2.setColor(ink);
+                    g2.drawPolygon(xs, ys, xs.length);
+                    // Gown
+                    g2.setColor(new Color(0x8B, 0x00, 0x8B));
+                    g2.fillRoundRect(cx - 13, cy - 4, 26, 24, 8, 8);
+                    g2.setColor(ink);
+                    g2.drawRoundRect(cx - 13, cy - 4, 26, 24, 8, 8);
+                    g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+                    g2.drawString("Q", cx - 4, cy + 11);
+                }
+                case KING -> {
+                    // Crown
+                    g2.setColor(new Color(0xE8, 0xC4, 0x00));
+                    final int[] xs = {cx - 11, cx - 6, cx - 2, cx + 2, cx + 6, cx + 11, cx + 11, cx - 11};
+                    final int[] ys = {cy - 20, cy - 28, cy - 22, cy - 29, cy - 22, cy - 28, cy - 18, cy - 18};
+                    g2.fillPolygon(xs, ys, xs.length);
+                    g2.setColor(new Color(0xDC, 0x14, 0x3C));
+                    g2.fillOval(cx - 2, cy - 30, 4, 4);
+                    // Robe
+                    g2.setColor(new Color(0x8B, 0x00, 0x00));
+                    g2.fillRoundRect(cx - 13, cy - 4, 26, 24, 8, 8);
+                    g2.setColor(ink);
+                    g2.drawRoundRect(cx - 13, cy - 4, 26, 24, 8, 8);
+                    // Beard
+                    g2.setColor(new Color(0x5C, 0x40, 0x33));
+                    g2.fillOval(cx - 7, cy - 8, 14, 8);
+                    g2.setColor(ink);
+                    g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+                    g2.drawString("K", cx - 4, cy + 11);
+                }
+                default -> {
+                    // no-op
+                }
+            }
+
+            // Suit badge on figure
+            g2.setColor(ink);
+            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+            final String suit = card.getSuit().getSymbol();
+            final FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(suit, cx - fm.stringWidth(suit) / 2, cy + 28);
         }
 
         private Layout computeLayout() {
