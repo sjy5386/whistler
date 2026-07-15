@@ -5,7 +5,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * A completed move of one or more cards between piles (used for undo).
+ * One atomic card transfer between piles.
+ * Undo groups one player move plus any following auto-foundation transfers into a single step.
  */
 @Getter
 @EqualsAndHashCode

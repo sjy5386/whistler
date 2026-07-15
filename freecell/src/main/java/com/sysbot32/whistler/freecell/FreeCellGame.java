@@ -13,6 +13,15 @@ import java.util.Random;
 
 /**
  * Pure FreeCell rules: deal, legal moves (including supermove), win detection, undo.
+ * <p>
+ * XP FreeCell fact-check (official help + original {@code freecell.exe} playtest):
+ * <ul>
+ *   <li>Home/foundation cards cannot be moved back into free cells or cascades.
+ *       Official play help only lists cascade bottoms and free cells as sources;
+ *       original binary confirmed home cells are not takeable.</li>
+ *   <li>After a player move, safe cards auto-transfer to home cells. Undo rewinds
+ *       that player move and its following auto-transfers as one step (not per card).</li>
+ * </ul>
  */
 @Getter
 public class FreeCellGame {
@@ -24,7 +33,11 @@ public class FreeCellGame {
     private final Card[] freeCells = new Card[FREE_CELL_COUNT];
     private final List<List<Card>> foundations = new ArrayList<>(FOUNDATION_COUNT);
     private final List<List<Card>> cascades = new ArrayList<>(CASCADE_COUNT);
-    private final Deque<Move> undoStack = new ArrayDeque<>();
+    /**
+     * Each entry is one undoable player step: the voluntary move plus any auto-moves
+     * that followed it (XP FreeCell batches those on a single Undo).
+     */
+    private final Deque<List<Move>> undoStack = new ArrayDeque<>();
 
     private GameStatus status = GameStatus.PLAYING;
     private final long seed;
@@ -249,17 +262,19 @@ public class FreeCellGame {
     }
 
     /**
-     * Applies a move. Returns {@code true} if the board changed.
+     * Applies a player move and records it as a new undo step.
+     * Call {@link #autoMoveToFoundations()} afterward so safe home transfers attach to this step.
+     *
+     * @return {@code true} if the board changed
      */
     public boolean move(final PileRef from, final int cardCount, final PileRef to) {
-        if (!this.canMove(from, cardCount, to)) {
+        final Move applied = this.applyMove(from, cardCount, to);
+        if (applied == null) {
             return false;
         }
-        final List<Card> moving = this.takeCards(from, cardCount);
-        this.placeCards(moving, to);
-        this.undoStack.push(new Move(from, to, cardCount));
-        this.moveCount++;
-        this.updateWinStatus();
+        final List<Move> turn = new ArrayList<>(4);
+        turn.add(applied);
+        this.undoStack.push(turn);
         return true;
     }
 
@@ -284,28 +299,34 @@ public class FreeCellGame {
     }
 
     /**
-     * After a successful user move, auto-moves any cards that can safely go to foundations
-     * when it is the unique minimal next rank overall (simple helper; optional UI use).
-     * This implementation only auto-moves when a card can go to foundation and its rank
-     * is at most one above the lowest foundation top (or Ace). Keeps play conservative.
+     * Auto-moves safe cards to foundations (XP FreeCell "unneeded card" transfer).
+     * <p>
+     * Safe rule (classic / MS-style): Aces always; otherwise only when both opposite-color
+     * foundations are built high enough that the card cannot be needed for tableau packing
+     * ({@code rank <= min(opposite foundation ranks) + 1}, empty suit = 0).
+     * <p>
+     * Any transfers performed here are appended to the <em>current</em> undo step so that
+     * one Undo rewinds the player move and all following auto-moves together (verified on
+     * original XP FreeCell).
+     *
+     * @return number of cards moved to foundations
      */
     public int autoMoveToFoundations() {
         if (this.status == GameStatus.WON) {
             return 0;
         }
-        int moved = 0;
+        final List<Move> autos = new ArrayList<>();
         boolean progress;
         do {
             progress = false;
-            // Free cells
             for (int i = 0; i < FREE_CELL_COUNT; i++) {
                 final Card card = this.freeCells[i];
-                if (card == null) {
+                if (card == null || !this.isSafeAutoFoundation(card)) {
                     continue;
                 }
-                if (this.isSafeAutoFoundation(card)
-                        && this.tryMoveToFoundation(PileRef.freeCell(i))) {
-                    moved++;
+                final Move applied = this.tryApplyToAnyFoundation(PileRef.freeCell(i));
+                if (applied != null) {
+                    autos.add(applied);
                     progress = true;
                     break;
                 }
@@ -313,21 +334,29 @@ public class FreeCellGame {
             if (progress) {
                 continue;
             }
-            // Cascade tops
             for (int i = 0; i < CASCADE_COUNT; i++) {
                 final Optional<Card> top = this.peekCascade(i);
-                if (top.isEmpty()) {
+                if (top.isEmpty() || !this.isSafeAutoFoundation(top.get())) {
                     continue;
                 }
-                if (this.isSafeAutoFoundation(top.get())
-                        && this.tryMoveToFoundation(PileRef.cascade(i))) {
-                    moved++;
+                final Move applied = this.tryApplyToAnyFoundation(PileRef.cascade(i));
+                if (applied != null) {
+                    autos.add(applied);
                     progress = true;
                     break;
                 }
             }
         } while (progress);
-        return moved;
+
+        if (!autos.isEmpty()) {
+            if (!this.undoStack.isEmpty()) {
+                this.undoStack.peek().addAll(autos);
+            } else {
+                // Auto-only batch (e.g. tests calling auto-move without a prior user move).
+                this.undoStack.push(new ArrayList<>(autos));
+            }
+        }
+        return autos.size();
     }
 
     /**
@@ -364,19 +393,52 @@ public class FreeCellGame {
     }
 
     /**
-     * Undoes the last move. Win state is not undone once set (game finished).
-     * Returns {@code true} if a move was undone.
+     * Undoes the last player step (voluntary move + any auto home transfers in that step).
+     * Win state is not undone once set (game finished).
+     *
+     * @return {@code true} if a step was undone
      */
     public boolean undo() {
         if (!this.canUndo()) {
             return false;
         }
-        final Move last = this.undoStack.pop();
-        final List<Card> cards = this.takeCards(last.getTo(), last.getCardCount());
-        this.placeCards(cards, last.getFrom());
-        this.moveCount = Math.max(0, this.moveCount - 1);
+        final List<Move> turn = this.undoStack.pop();
+        for (int i = turn.size() - 1; i >= 0; i--) {
+            final Move step = turn.get(i);
+            final List<Card> cards = this.takeCards(step.getTo(), step.getCardCount());
+            this.placeCards(cards, step.getFrom());
+            this.moveCount = Math.max(0, this.moveCount - 1);
+        }
         this.status = GameStatus.PLAYING;
         return true;
+    }
+
+    /**
+     * Applies a legal move without creating a new undo step. Updates {@link #moveCount}
+     * and win status. Returns the recorded {@link Move}, or {@code null} if illegal.
+     */
+    private Move applyMove(final PileRef from, final int cardCount, final PileRef to) {
+        if (!this.canMove(from, cardCount, to)) {
+            return null;
+        }
+        final List<Card> moving = this.takeCards(from, cardCount);
+        this.placeCards(moving, to);
+        this.moveCount++;
+        this.updateWinStatus();
+        return new Move(from, to, cardCount);
+    }
+
+    private Move tryApplyToAnyFoundation(final PileRef from) {
+        if (!this.canTake(from, 1)) {
+            return null;
+        }
+        for (int i = 0; i < FOUNDATION_COUNT; i++) {
+            final Move applied = this.applyMove(from, 1, PileRef.foundation(i));
+            if (applied != null) {
+                return applied;
+            }
+        }
+        return null;
     }
 
     private boolean canTake(final PileRef from, final int cardCount) {
@@ -387,7 +449,8 @@ public class FreeCellGame {
             }
             case FOUNDATION -> {
                 this.checkFoundationIndex(from.getIndex());
-                // Foundations are not a source for normal play; still allow for undo path only via takeCards.
+                // XP FreeCell: home cells are sinks only (cannot take back into play).
+                // Undo still uses takeCards() directly when reversing a recorded step.
                 yield false;
             }
             case CASCADE -> {

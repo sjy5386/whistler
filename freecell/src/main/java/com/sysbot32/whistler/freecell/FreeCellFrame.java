@@ -263,6 +263,7 @@ public class FreeCellFrame extends JFrame {
         }
         return switch (hit.pile().getType()) {
             case FREE_CELL -> this.game.getFreeCell(hit.pile().getIndex()).isPresent();
+            // XP FreeCell: home cells are not selectable sources (cannot take cards back).
             case FOUNDATION -> false;
             case CASCADE -> this.game.validSequenceLengthFromTop(
                     hit.pile().getIndex(), hit.cardCount()) == hit.cardCount();

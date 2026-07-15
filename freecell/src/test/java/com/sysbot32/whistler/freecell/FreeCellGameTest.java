@@ -263,6 +263,41 @@ class FreeCellGameTest {
     }
 
     @Test
+    void cannotTakeCardFromFoundation() {
+        final FreeCellGame game = FreeCellGame.emptyBoard();
+        game.pushFoundationForTest(0, new Card(Suit.HEARTS, Rank.ACE));
+        game.pushFoundationForTest(0, new Card(Suit.HEARTS, Rank.TWO));
+        assertFalse(game.canMove(PileRef.foundation(0), 1, PileRef.freeCell(0)));
+        assertFalse(game.canMove(PileRef.foundation(0), 1, PileRef.cascade(0)));
+        assertEquals(2, game.getFoundation(0).size());
+    }
+
+    @Test
+    void undoBatchesUserMoveWithFollowingAutoFoundationMoves() {
+        // User moves ♥A to free cell; auto-move then sends ♥A (and safe followers) home.
+        // One Undo must reverse autos + the user move together (XP FreeCell behavior).
+        final FreeCellGame game = FreeCellGame.emptyBoard();
+        game.pushCascadeForTest(0, new Card(Suit.HEARTS, Rank.ACE));
+        game.pushCascadeForTest(1, new Card(Suit.CLUBS, Rank.ACE));
+        game.pushCascadeForTest(2, new Card(Suit.SPADES, Rank.ACE));
+        // Opposite black Aces already home → red Two would auto if present; keep only Aces.
+        assertTrue(game.move(PileRef.cascade(0), 1, PileRef.freeCell(0)));
+        final int autos = game.autoMoveToFoundations();
+        assertTrue(autos >= 1);
+        assertTrue(game.getFreeCell(0).isEmpty());
+        assertTrue(game.getFoundationCardCount() >= 1);
+        final int movesAfter = game.getMoveCount();
+        assertTrue(movesAfter >= 2); // user + at least one auto
+
+        assertTrue(game.undo());
+        assertEquals(0, game.getMoveCount());
+        assertEquals(0, game.getFoundationCardCount());
+        assertEquals(Rank.ACE, game.peekCascade(0).orElseThrow().getRank());
+        assertTrue(game.getFreeCell(0).isEmpty());
+        assertFalse(game.canUndo());
+    }
+
+    @Test
     void fromDealRejectsWrongSize() {
         assertThrows(IllegalArgumentException.class, () -> FreeCellGame.fromDeal(List.of()));
         assertThrows(IllegalArgumentException.class,
