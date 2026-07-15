@@ -5,11 +5,14 @@ import com.sysbot32.whistler.config.Config;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -49,6 +52,8 @@ public class FreeCellFrame extends JFrame {
     private boolean endDialogShown;
     private boolean gameCounted;
 
+    private JMenuItem newItem;
+    private JMenuItem selectItem;
     private JMenuItem restartItem;
     private JMenuItem undoItem;
 
@@ -94,13 +99,13 @@ public class FreeCellFrame extends JFrame {
         final JMenu gameMenu = new JMenu("Game");
         gameMenu.setMnemonic(KeyEvent.VK_G);
 
-        final JMenuItem newItem = new JMenuItem("New Game", KeyEvent.VK_N);
-        newItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
-        newItem.addActionListener(e -> this.newGame());
+        this.newItem = new JMenuItem("New Game", KeyEvent.VK_N);
+        this.newItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
+        this.newItem.addActionListener(e -> this.newGame());
 
-        final JMenuItem selectItem = new JMenuItem("Select Game...", KeyEvent.VK_S);
-        selectItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0));
-        selectItem.addActionListener(e -> this.selectGame());
+        this.selectItem = new JMenuItem("Select Game...", KeyEvent.VK_S);
+        this.selectItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0));
+        this.selectItem.addActionListener(e -> this.selectGame());
 
         this.restartItem = new JMenuItem("Restart Game", KeyEvent.VK_R);
         this.restartItem.addActionListener(e -> this.restartSameGame());
@@ -120,8 +125,8 @@ public class FreeCellFrame extends JFrame {
         final JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
         exitItem.addActionListener(e -> this.exit());
 
-        gameMenu.add(newItem);
-        gameMenu.add(selectItem);
+        gameMenu.add(this.newItem);
+        gameMenu.add(this.selectItem);
         gameMenu.add(this.restartItem);
         gameMenu.addSeparator();
         gameMenu.add(statsItem);
@@ -157,6 +162,9 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void newGame() {
+        if (this.boardPanel.isAnimating()) {
+            return;
+        }
         if (!this.confirmResignIfNeeded()) {
             return;
         }
@@ -164,7 +172,7 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void restartSameGame() {
-        if (!this.isGameStarted()) {
+        if (this.boardPanel.isAnimating() || !this.isGameStarted()) {
             return;
         }
         if (!this.confirmResignIfNeeded()) {
@@ -174,9 +182,11 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void selectGame() {
-        if (!this.confirmResignIfNeeded()) {
+        if (this.boardPanel.isAnimating()) {
             return;
         }
+        // Resolve a valid target number first so Cancel / invalid input never
+        // resigns and loses the current game (stats consistency).
         final int current = Math.max(1, this.game.getGameNumber());
         final String input = (String) JOptionPane.showInputDialog(
                 this,
@@ -208,6 +218,9 @@ public class FreeCellFrame extends JFrame {
             );
             return;
         }
+        if (!this.confirmResignIfNeeded()) {
+            return;
+        }
         this.startGame(new FreeCellGame(number));
     }
 
@@ -224,10 +237,22 @@ public class FreeCellFrame extends JFrame {
         if (!this.isGameStarted()) {
             return true;
         }
-        // Classic FreeCell asks even when no moves have been made yet.
-        if (this.gameCounted || this.game.isWon() || this.game.isLost()) {
+        if (this.gameCounted) {
             return true;
         }
+        // Already finished: finalize stats without a second prompt.
+        if (this.game.isWon()) {
+            this.statistics.recordWin();
+            this.gameCounted = true;
+            return true;
+        }
+        if (this.game.isLost()) {
+            // Loss was deferred so Undo can resume play; commit now that the user leaves.
+            this.statistics.recordLoss();
+            this.gameCounted = true;
+            return true;
+        }
+        // In progress (even with 0 moves) — classic resign prompt.
         final int answer = JOptionPane.showConfirmDialog(
                 this,
                 "Do you want to resign this game?",
@@ -238,15 +263,13 @@ public class FreeCellFrame extends JFrame {
         if (answer != JOptionPane.YES_OPTION) {
             return false;
         }
-        // Resign counts as a loss (classic FreeCell statistics).
         this.statistics.recordLoss();
         this.gameCounted = true;
         return true;
     }
 
     private void startGame(final FreeCellGame next) {
-        // Uncounted mid-game leave without resign dialog (should not happen after confirm).
-        this.recordAbandonedIfNeeded();
+        this.boardPanel.cancelAnimation();
         this.game = next;
         this.selection = null;
         this.endDialogShown = false;
@@ -257,8 +280,17 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void undo() {
+        if (this.boardPanel.isAnimating()) {
+            return;
+        }
+        final boolean wasLost = this.game.isLost();
         if (this.game.undo()) {
+            // Loss stats are only committed when leaving a lost game, so Undo can
+            // resume play cleanly without reversing counters.
             this.endDialogShown = false;
+            if (wasLost) {
+                this.gameCounted = false;
+            }
             this.selection = null;
             this.boardPanel.clearDrag();
             this.refreshStatus();
@@ -267,30 +299,29 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void exit() {
+        if (this.boardPanel.isAnimating()) {
+            return;
+        }
         if (!this.confirmResignIfNeeded()) {
             return;
         }
-        this.recordAbandonedIfNeeded();
+        this.boardPanel.cancelAnimation();
         this.dispose();
     }
 
-    private void recordAbandonedIfNeeded() {
-        if (!this.isGameStarted()) {
-            return;
-        }
-        if (!this.gameCounted && this.game.getMoveCount() > 0
-                && !this.game.isWon() && !this.game.isLost()) {
-            this.statistics.recordAbandoned();
-            this.gameCounted = true;
-        }
-    }
-
     private void refreshStatus() {
+        final boolean animating = this.boardPanel.isAnimating();
+        if (this.newItem != null) {
+            this.newItem.setEnabled(!animating);
+        }
+        if (this.selectItem != null) {
+            this.selectItem.setEnabled(!animating);
+        }
         if (this.restartItem != null) {
-            this.restartItem.setEnabled(this.isGameStarted());
+            this.restartItem.setEnabled(!animating && this.isGameStarted());
         }
         if (this.undoItem != null) {
-            this.undoItem.setEnabled(this.game.canUndo());
+            this.undoItem.setEnabled(!animating && this.game.canUndo());
         }
 
         if (!this.isGameStarted()) {
@@ -333,6 +364,7 @@ public class FreeCellFrame extends JFrame {
             return;
         }
         this.endDialogShown = true;
+        // Wins are final (no undo after win) — record immediately.
         if (!this.gameCounted) {
             this.statistics.recordWin();
             this.gameCounted = true;
@@ -351,10 +383,8 @@ public class FreeCellFrame extends JFrame {
             return;
         }
         this.endDialogShown = true;
-        if (!this.gameCounted) {
-            this.statistics.recordLoss();
-            this.gameCounted = true;
-        }
+        // Do not record a loss yet: classic FreeCell allows Undo after "no more moves".
+        // Stats commit when the player leaves the lost game (new / select / restart / exit).
         this.refreshStatus();
         JOptionPane.showMessageDialog(
                 this,
@@ -364,9 +394,7 @@ public class FreeCellFrame extends JFrame {
         );
     }
 
-    private void finishTurn() {
-        this.game.autoMoveToFoundations();
-        this.game.evaluateLoss();
+    private void afterTurnSettled() {
         this.selection = null;
         this.refreshStatus();
         this.boardPanel.repaint();
@@ -377,12 +405,26 @@ public class FreeCellFrame extends JFrame {
         }
     }
 
+    /**
+     * Player move + auto foundations. Uses animation unless Quick play is on.
+     */
     private void applyMove(final PileRef from, final int cardCount, final PileRef to) {
-        if (this.game.move(from, cardCount, to)) {
-            this.finishTurn();
-        } else {
-            this.notifyIllegalMove();
+        if (this.boardPanel.isAnimating()) {
+            return;
         }
+        if (!this.game.canMove(from, cardCount, to)) {
+            this.notifyIllegalMove();
+            return;
+        }
+        if (this.options.isQuickPlay()) {
+            if (this.game.moveAndAutoMove(from, cardCount, to)) {
+                this.afterTurnSettled();
+            } else {
+                this.notifyIllegalMove();
+            }
+            return;
+        }
+        this.boardPanel.playAnimatedTurn(from, cardCount, to);
     }
 
     private void notifyIllegalMove() {
@@ -398,17 +440,26 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void trySelectOrMove(final Hit hit, final boolean doubleClick) {
-        if (hit == null || !this.isGameStarted() || this.game.isWon() || this.game.isLost()) {
+        if (hit == null || this.boardPanel.isAnimating()
+                || !this.isGameStarted() || this.game.isWon() || this.game.isLost()) {
             return;
         }
         if (doubleClick) {
             if (!this.options.isDoubleClickToFreeCell()) {
                 return;
             }
-            // Classic FreeCell: double-click parks a card in an empty free cell.
+            // Classic FreeCell: double-click parks a cascade card in an empty free cell.
+            // Not free-cell → free-cell hopping.
             final PileRef from = hit.pile();
-            if (hit.cardCount() == 1 && this.game.tryMoveToEmptyFreeCell(from)) {
-                this.finishTurn();
+            if (hit.cardCount() != 1 || from.getType() == PileType.FREE_CELL) {
+                return;
+            }
+            for (int i = 0; i < FreeCellGame.FREE_CELL_COUNT; i++) {
+                final PileRef free = PileRef.freeCell(i);
+                if (this.game.canMove(from, 1, free)) {
+                    this.applyMove(from, 1, free);
+                    return;
+                }
             }
             return;
         }
@@ -441,7 +492,7 @@ public class FreeCellFrame extends JFrame {
             this.selection = new Selection(hit.pile(), hit.cardCount());
             this.boardPanel.repaint();
         } else {
-            this.notifyIllegalMove();
+            // Second-click cancel / empty felt: no illegal-move dialog.
             this.selection = null;
             this.boardPanel.repaint();
         }
@@ -467,6 +518,10 @@ public class FreeCellFrame extends JFrame {
     }
 
     private final class BoardPanel extends JPanel {
+        private static final int ANIM_MS = 180;
+        private static final int ANIM_AUTO_MS = 120;
+        private static final int ANIM_FPS_MS = 12;
+
         private Point pressPoint;
         private Point dragPoint;
         private Selection dragSelection;
@@ -475,12 +530,25 @@ public class FreeCellFrame extends JFrame {
         /** Cursor position for king eye-tracking (null when mouse left the board). */
         private Point cursorPoint;
 
+        private boolean animating;
+        private List<Card> animCards = List.of();
+        private Point[] animFrom = new Point[0];
+        private Point[] animTo = new Point[0];
+        private long animStartMs;
+        private int animDurationMs = ANIM_MS;
+        private Runnable animOnDone;
+        private Timer animTimer;
+        /** Hide these pile tops while a fly-to animation is in progress. */
+        private PileRef animHidePile;
+        private int animHideCount;
+
         BoardPanel() {
             final MouseAdapter mouse = new MouseAdapter() {
                 @Override
                 public void mousePressed(final MouseEvent e) {
                     BoardPanel.this.cursorPoint = e.getPoint();
                     if (e.getButton() != MouseEvent.BUTTON1
+                            || BoardPanel.this.animating
                             || !FreeCellFrame.this.isGameStarted()
                             || FreeCellFrame.this.game.isWon()
                             || FreeCellFrame.this.game.isLost()) {
@@ -565,7 +633,9 @@ public class FreeCellFrame extends JFrame {
                                 && FreeCellFrame.this.game.canMove(src.pile(), src.cardCount(), dest.pile())) {
                             FreeCellFrame.this.applyMove(src.pile(), src.cardCount(), dest.pile());
                         } else {
-                            if (dest != null) {
+                            // Ignore cancel-drops: empty felt, same pile, or non-targets.
+                            // Only complain when dropping onto a different illegal destination.
+                            if (dest != null && !src.pile().equals(dest.pile())) {
                                 FreeCellFrame.this.notifyIllegalMove();
                             }
                             FreeCellFrame.this.selection = src;
@@ -586,6 +656,162 @@ public class FreeCellFrame extends JFrame {
             final Rectangle badge = this.computeLayout().kingBadge();
             // Slightly inflate so pupil movement doesn't leave trails
             this.repaint(badge.x - 2, badge.y - 2, badge.width + 4, badge.height + 4);
+        }
+
+        boolean isAnimating() {
+            return this.animating;
+        }
+
+        /**
+         * Stops any in-flight animation and drops pending auto-move callbacks.
+         * The board model is left as-is (player move / partial autos already applied).
+         */
+        void cancelAnimation() {
+            if (this.animTimer != null) {
+                this.animTimer.stop();
+                this.animTimer = null;
+            }
+            this.animating = false;
+            this.animCards = List.of();
+            this.animFrom = new Point[0];
+            this.animTo = new Point[0];
+            this.animOnDone = null;
+            this.animHidePile = null;
+            this.animHideCount = 0;
+        }
+
+        /**
+         * Animate player move, then chain auto-foundation flights, then settle the turn.
+         */
+        void playAnimatedTurn(final PileRef from, final int cardCount, final PileRef to) {
+            final FreeCellGame turnGame = FreeCellFrame.this.game;
+            final Layout layout = this.computeLayout();
+            final List<Card> cards = this.cardsFor(from, cardCount);
+            if (cards.isEmpty()) {
+                return;
+            }
+            final Point[] fromPts = this.cardStackOrigins(layout, from, cardCount);
+            if (!turnGame.move(from, cardCount, to)) {
+                FreeCellFrame.this.notifyIllegalMove();
+                return;
+            }
+            final Point[] toPts = this.cardStackOrigins(layout, to, cardCount);
+            FreeCellFrame.this.selection = null;
+            FreeCellFrame.this.refreshStatus(); // disable menus while animating
+            this.startFlight(cards, fromPts, toPts, ANIM_MS, to, cardCount,
+                    () -> this.animateNextAuto(turnGame));
+        }
+
+        private void animateNextAuto(final FreeCellGame turnGame) {
+            // Drop callbacks if the active game was switched or animation was cancelled.
+            if (FreeCellFrame.this.game != turnGame) {
+                return;
+            }
+            final Optional<PileRef> source = turnGame.peekNextAutoFoundationSource();
+            if (source.isEmpty()) {
+                turnGame.evaluateLoss();
+                this.animating = false;
+                this.animHidePile = null;
+                this.animHideCount = 0;
+                FreeCellFrame.this.afterTurnSettled();
+                return;
+            }
+            final Layout layout = this.computeLayout();
+            final List<Card> cards = this.cardsFor(source.get(), 1);
+            final Point[] fromPts = this.cardStackOrigins(layout, source.get(), 1);
+            final Optional<Move> applied = turnGame.applyNextAutoFoundationMove();
+            if (applied.isEmpty() || FreeCellFrame.this.game != turnGame) {
+                if (FreeCellFrame.this.game == turnGame) {
+                    turnGame.evaluateLoss();
+                    this.animating = false;
+                    FreeCellFrame.this.afterTurnSettled();
+                }
+                return;
+            }
+            final Point[] toPts = this.cardStackOrigins(layout, applied.get().getTo(), 1);
+            this.startFlight(cards, fromPts, toPts, ANIM_AUTO_MS, applied.get().getTo(), 1,
+                    () -> this.animateNextAuto(turnGame));
+        }
+
+        private void startFlight(
+                final List<Card> cards,
+                final Point[] fromPts,
+                final Point[] toPts,
+                final int durationMs,
+                final PileRef hidePile,
+                final int hideCount,
+                final Runnable onDone
+        ) {
+            this.animating = true;
+            this.animCards = List.copyOf(cards);
+            this.animFrom = fromPts;
+            this.animTo = toPts;
+            this.animDurationMs = durationMs;
+            this.animStartMs = System.currentTimeMillis();
+            this.animOnDone = onDone;
+            this.animHidePile = hidePile;
+            this.animHideCount = hideCount;
+            if (this.animTimer != null) {
+                this.animTimer.stop();
+            }
+            this.animTimer = new Timer(ANIM_FPS_MS, new ActionListener() {
+                @Override
+                public void actionPerformed(final ActionEvent e) {
+                    if (!BoardPanel.this.animating) {
+                        BoardPanel.this.animTimer.stop();
+                        return;
+                    }
+                    final long elapsed = System.currentTimeMillis() - BoardPanel.this.animStartMs;
+                    if (elapsed >= BoardPanel.this.animDurationMs) {
+                        BoardPanel.this.animTimer.stop();
+                        BoardPanel.this.animCards = List.of();
+                        BoardPanel.this.animHidePile = null;
+                        BoardPanel.this.animHideCount = 0;
+                        BoardPanel.this.repaint();
+                        final Runnable done = BoardPanel.this.animOnDone;
+                        BoardPanel.this.animOnDone = null;
+                        if (done != null) {
+                            done.run();
+                        }
+                        return;
+                    }
+                    BoardPanel.this.repaint();
+                }
+            });
+            this.animTimer.start();
+            this.repaint();
+        }
+
+        private Point[] cardStackOrigins(final Layout layout, final PileRef pile, final int count) {
+            final Point[] pts = new Point[count];
+            switch (pile.getType()) {
+                case FREE_CELL -> {
+                    final Rectangle r = layout.freeCell(pile.getIndex());
+                    pts[0] = new Point(r.x, r.y);
+                }
+                case FOUNDATION -> {
+                    final Rectangle r = layout.foundation(pile.getIndex());
+                    pts[0] = new Point(r.x, r.y);
+                }
+                case CASCADE -> {
+                    final int size = FreeCellFrame.this.game.getCascade(pile.getIndex()).size();
+                    // After a move onto this cascade, the moved stack occupies the last `count` slots.
+                    final int startIndex = Math.max(0, size - count);
+                    final int baseX = layout.cascadeX(pile.getIndex());
+                    final int baseY = layout.cascadeTopY;
+                    for (int i = 0; i < count; i++) {
+                        pts[i] = new Point(baseX, baseY + (startIndex + i) * CASCADE_OVERLAP);
+                    }
+                }
+            }
+            return pts;
+        }
+
+        private boolean isAnimHidden(final PileRef pile, final int depthFromTop) {
+            if (this.animHidePile == null || !this.animHidePile.equals(pile)) {
+                return false;
+            }
+            return depthFromTop <= this.animHideCount;
         }
 
         void clearDrag() {
@@ -695,13 +921,15 @@ public class FreeCellFrame extends JFrame {
                 this.paintEmptySlot(g2, r, false);
                 final Optional<Card> card = FreeCellFrame.this.game.getFreeCell(i);
                 if (card.isPresent()) {
-                    final boolean hide = dragging
+                    final boolean hideDrag = dragging
                             && this.dragSelection.pile().getType() == PileType.FREE_CELL
                             && this.dragSelection.pile().getIndex() == i;
-                    if (!hide) {
+                    final boolean hideAnim = this.isAnimHidden(PileRef.freeCell(i), 1);
+                    if (!hideDrag && !hideAnim) {
                         final boolean selected = sel != null
                                 && sel.pile().getType() == PileType.FREE_CELL
-                                && sel.pile().getIndex() == i;
+                                && sel.pile().getIndex() == i
+                                && !this.animating;
                         this.paintCard(g2, r.x, r.y, card.get(), selected);
                     }
                 }
@@ -715,7 +943,7 @@ public class FreeCellFrame extends JFrame {
                 final Rectangle r = layout.foundation(i);
                 this.paintEmptySlot(g2, r, true);
                 final List<Card> pile = FreeCellFrame.this.game.getFoundation(i);
-                if (!pile.isEmpty()) {
+                if (!pile.isEmpty() && !this.isAnimHidden(PileRef.foundation(i), 1)) {
                     this.paintCard(g2, r.x, r.y, pile.get(pile.size() - 1), false);
                 }
             }
@@ -729,20 +957,25 @@ public class FreeCellFrame extends JFrame {
                     this.paintEmptySlot(g2, new Rectangle(baseX, baseY, CARD_WIDTH, CARD_HEIGHT), false);
                     continue;
                 }
-                final int hideFrom = dragging
+                final int hideDragFrom = dragging
                         && this.dragSelection.pile().getType() == PileType.CASCADE
                         && this.dragSelection.pile().getIndex() == i
                         ? cascade.size() - this.dragSelection.cardCount()
                         : cascade.size();
                 for (int c = 0; c < cascade.size(); c++) {
-                    if (c >= hideFrom) {
+                    if (c >= hideDragFrom) {
                         break;
+                    }
+                    final int fromTop = cascade.size() - c;
+                    if (this.isAnimHidden(PileRef.cascade(i), fromTop)) {
+                        continue;
                     }
                     final boolean selected = sel != null
                             && sel.pile().getType() == PileType.CASCADE
                             && sel.pile().getIndex() == i
                             && c >= cascade.size() - sel.cardCount()
-                            && !dragging;
+                            && !dragging
+                            && !this.animating;
                     this.paintCard(g2, baseX, baseY + c * CASCADE_OVERLAP, cascade.get(c), selected);
                 }
             }
@@ -754,6 +987,21 @@ public class FreeCellFrame extends JFrame {
                 for (final Card card : this.dragCards) {
                     this.paintCard(g2, x, y, card, true);
                     y += CASCADE_OVERLAP;
+                }
+            }
+
+            // Flight animation ghosts
+            if (this.animating && !this.animCards.isEmpty()) {
+                final float t = Math.min(1f,
+                        (System.currentTimeMillis() - this.animStartMs) / (float) this.animDurationMs);
+                // Ease-out
+                final float e = 1f - (1f - t) * (1f - t);
+                for (int i = 0; i < this.animCards.size(); i++) {
+                    final Point a = this.animFrom[i];
+                    final Point b = this.animTo[i];
+                    final int x = Math.round(a.x + (b.x - a.x) * e);
+                    final int y = Math.round(a.y + (b.y - a.y) * e);
+                    this.paintCard(g2, x, y, this.animCards.get(i), false);
                 }
             }
 

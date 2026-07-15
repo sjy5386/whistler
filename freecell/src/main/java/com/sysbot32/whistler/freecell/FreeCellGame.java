@@ -336,7 +336,7 @@ public class FreeCellGame {
 
     /**
      * Applies a player move and records it as a new undo step.
-     * Call {@link #autoMoveToFoundations()} afterward so safe home transfers attach to this step.
+     * Prefer {@link #moveAndAutoMove} for normal play so auto home transfers stay on the same step.
      *
      * @return {@code true} if the board changed
      */
@@ -351,6 +351,20 @@ public class FreeCellGame {
         final List<Move> turn = new ArrayList<>(4);
         turn.add(applied);
         this.undoStack.push(turn);
+        return true;
+    }
+
+    /**
+     * Player move plus safe auto-foundation transfers as one undoable turn, then loss check.
+     *
+     * @return {@code true} if the player move was applied
+     */
+    public boolean moveAndAutoMove(final PileRef from, final int cardCount, final PileRef to) {
+        if (!this.move(from, cardCount, to)) {
+            return false;
+        }
+        this.autoMoveToFoundations();
+        this.evaluateLoss();
         return true;
     }
 
@@ -398,6 +412,59 @@ public class FreeCellGame {
     }
 
     /**
+     * Source pile of the next card that would auto-move to a foundation, if any.
+     * Does not change the board (used for animation).
+     */
+    public Optional<PileRef> peekNextAutoFoundationSource() {
+        if (this.status != GameStatus.PLAYING) {
+            return Optional.empty();
+        }
+        for (int i = 0; i < FREE_CELL_COUNT; i++) {
+            final Card card = this.freeCells[i];
+            if (card == null || !this.isSafeAutoFoundation(card)) {
+                continue;
+            }
+            if (this.canApplyToAnyFoundation(PileRef.freeCell(i))) {
+                return Optional.of(PileRef.freeCell(i));
+            }
+        }
+        for (int i = 0; i < CASCADE_COUNT; i++) {
+            final Optional<Card> top = this.peekCascade(i);
+            if (top.isEmpty() || !this.isSafeAutoFoundation(top.get())) {
+                continue;
+            }
+            if (this.canApplyToAnyFoundation(PileRef.cascade(i))) {
+                return Optional.of(PileRef.cascade(i));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Applies a single safe auto-move to foundation and appends it to the current undo step.
+     *
+     * @return the move applied, or empty if none
+     */
+    public Optional<Move> applyNextAutoFoundationMove() {
+        final Optional<PileRef> source = this.peekNextAutoFoundationSource();
+        if (source.isEmpty()) {
+            return Optional.empty();
+        }
+        final Move applied = this.tryApplyToAnyFoundation(source.get());
+        if (applied == null) {
+            return Optional.empty();
+        }
+        if (!this.undoStack.isEmpty()) {
+            this.undoStack.peek().add(applied);
+        } else {
+            final List<Move> batch = new ArrayList<>(1);
+            batch.add(applied);
+            this.undoStack.push(batch);
+        }
+        return Optional.of(applied);
+    }
+
+    /**
      * Auto-moves safe cards to foundations (classic "unneeded card" transfer).
      * <p>
      * Safe rule: Aces always; otherwise only when both opposite-color foundations are built
@@ -411,55 +478,11 @@ public class FreeCellGame {
      * @return number of cards moved to foundations
      */
     public int autoMoveToFoundations() {
-        if (this.status != GameStatus.PLAYING && this.status != GameStatus.LOST) {
-            // Still allow while PLAYING only; LOST/WON skip auto.
-            return 0;
+        int moved = 0;
+        while (this.applyNextAutoFoundationMove().isPresent()) {
+            moved++;
         }
-        if (this.status == GameStatus.LOST) {
-            return 0;
-        }
-        final List<Move> autos = new ArrayList<>();
-        boolean progress;
-        do {
-            progress = false;
-            for (int i = 0; i < FREE_CELL_COUNT; i++) {
-                final Card card = this.freeCells[i];
-                if (card == null || !this.isSafeAutoFoundation(card)) {
-                    continue;
-                }
-                final Move applied = this.tryApplyToAnyFoundation(PileRef.freeCell(i));
-                if (applied != null) {
-                    autos.add(applied);
-                    progress = true;
-                    break;
-                }
-            }
-            if (progress) {
-                continue;
-            }
-            for (int i = 0; i < CASCADE_COUNT; i++) {
-                final Optional<Card> top = this.peekCascade(i);
-                if (top.isEmpty() || !this.isSafeAutoFoundation(top.get())) {
-                    continue;
-                }
-                final Move applied = this.tryApplyToAnyFoundation(PileRef.cascade(i));
-                if (applied != null) {
-                    autos.add(applied);
-                    progress = true;
-                    break;
-                }
-            }
-        } while (progress);
-
-        if (!autos.isEmpty()) {
-            if (!this.undoStack.isEmpty()) {
-                this.undoStack.peek().addAll(autos);
-            } else {
-                // Auto-only batch (e.g. tests calling auto-move without a prior user move).
-                this.undoStack.push(new ArrayList<>(autos));
-            }
-        }
-        return autos.size();
+        return moved;
     }
 
     /**
@@ -534,6 +557,18 @@ public class FreeCellGame {
         this.moveCount++;
         this.updateWinStatus();
         return new Move(from, to, cardCount);
+    }
+
+    private boolean canApplyToAnyFoundation(final PileRef from) {
+        if (!this.canTake(from, 1)) {
+            return false;
+        }
+        for (int i = 0; i < FOUNDATION_COUNT; i++) {
+            if (this.isLegalMove(from, 1, PileRef.foundation(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Move tryApplyToAnyFoundation(final PileRef from) {

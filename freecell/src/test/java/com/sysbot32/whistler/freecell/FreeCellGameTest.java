@@ -331,6 +331,21 @@ class FreeCellGameTest {
     }
 
     @Test
+    void moveAndAutoMoveBundlesAutosAndChecksLoss() {
+        final FreeCellGame game = FreeCellGame.emptyBoard();
+        game.pushCascadeForTest(0, new Card(Suit.HEARTS, Rank.ACE));
+        game.pushCascadeForTest(1, new Card(Suit.CLUBS, Rank.ACE));
+        assertTrue(game.moveAndAutoMove(PileRef.cascade(0), 1, PileRef.freeCell(0)));
+        // Ace parked then auto-home; other Ace also auto-homes
+        assertTrue(game.getFoundationCardCount() >= 1);
+        assertTrue(game.getFreeCell(0).isEmpty());
+        assertTrue(game.canUndo());
+        assertTrue(game.undo());
+        assertEquals(0, game.getFoundationCardCount());
+        assertEquals(Rank.ACE, game.peekCascade(0).orElseThrow().getRank());
+    }
+
+    @Test
     void undoBatchesUserMoveWithFollowingAutoFoundationMoves() {
         // User moves ♥A to free cell; auto-move then sends ♥A (and safe followers) home.
         // One Undo must reverse autos + the user move together (classic FreeCell behavior).
