@@ -9,12 +9,14 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Pure FreeCell rules: deal, legal moves (including supermove), win detection, undo.
  * <p>
- * XP FreeCell fact-check (official help + original {@code freecell.exe} playtest):
+ * Deals use the classic numbered FreeCell algorithm ({@link NumberedDeal}).
+ * <p>
+ * Classic FreeCell fact-check (official help + original {@code freecell.exe} playtest):
  * <ul>
  *   <li>Home/foundation cards cannot be moved back into free cells or cascades.
  *       Official play help only lists cascade bottoms and free cells as sources;
@@ -35,32 +37,50 @@ public class FreeCellGame {
     private final List<List<Card>> cascades = new ArrayList<>(CASCADE_COUNT);
     /**
      * Each entry is one undoable player step: the voluntary move plus any auto-moves
-     * that followed it (XP FreeCell batches those on a single Undo).
+     * that followed it (classic FreeCell batches those on a single Undo).
      */
     private final Deque<List<Move>> undoStack = new ArrayDeque<>();
 
     private GameStatus status = GameStatus.PLAYING;
-    private final long seed;
+    /** Numbered deal id (1…), or 0 for fixture boards. */
+    private final int gameNumber;
     private int moveCount;
 
+    /** New game with a random classic numbered deal (1…32000). */
     public FreeCellGame() {
-        this(System.nanoTime());
+        this(randomClassicGameNumber());
     }
 
-    public FreeCellGame(final long seed) {
-        this(seed, new Random(seed));
+    /**
+     * New game using the classic numbered deal for {@code gameNumber}
+     * (compatible with common FreeCell game-number layouts).
+     */
+    public FreeCellGame(final int gameNumber) {
+        if (gameNumber < 1) {
+            throw new IllegalArgumentException("Game number must be >= 1: " + gameNumber);
+        }
+        this.gameNumber = gameNumber;
+        this.initPiles();
+        this.deal(NumberedDeal.deal(gameNumber));
     }
 
-    public FreeCellGame(final long seed, final Random random) {
-        Objects.requireNonNull(random, "random");
-        this.seed = seed;
+    /** Fixture constructor: empty board, optional game-number label for tests. */
+    private FreeCellGame(final int gameNumber, final boolean fixture) {
+        this.gameNumber = gameNumber;
+        this.initPiles();
+    }
+
+    private void initPiles() {
         for (int i = 0; i < FOUNDATION_COUNT; i++) {
             this.foundations.add(new ArrayList<>());
         }
         for (int i = 0; i < CASCADE_COUNT; i++) {
             this.cascades.add(new ArrayList<>());
         }
-        this.deal(Deck.createShuffled(random));
+    }
+
+    private static int randomClassicGameNumber() {
+        return 1 + ThreadLocalRandom.current().nextInt(NumberedDeal.STANDARD_MAX_GAME);
     }
 
     /**
@@ -72,13 +92,8 @@ public class FreeCellGame {
         if (cards.size() != DECK_SIZE) {
             throw new IllegalArgumentException("Deal must contain exactly " + DECK_SIZE + " cards");
         }
-        final FreeCellGame game = new FreeCellGame(0L, new Random(0));
-        // Constructor already dealt; clear and re-deal with the given order.
-        game.clearBoard();
+        final FreeCellGame game = new FreeCellGame(0, true);
         game.deal(cards);
-        game.undoStack.clear();
-        game.moveCount = 0;
-        game.status = GameStatus.PLAYING;
         return game;
     }
 
@@ -86,30 +101,18 @@ public class FreeCellGame {
      * Empty board for carefully constructed test positions.
      */
     public static FreeCellGame emptyBoard() {
-        final FreeCellGame game = new FreeCellGame(0L, new Random(0));
-        game.clearBoard();
-        game.undoStack.clear();
-        game.moveCount = 0;
-        game.status = GameStatus.PLAYING;
-        return game;
-    }
-
-    private void clearBoard() {
-        for (int i = 0; i < FREE_CELL_COUNT; i++) {
-            this.freeCells[i] = null;
-        }
-        for (final List<Card> foundation : this.foundations) {
-            foundation.clear();
-        }
-        for (final List<Card> cascade : this.cascades) {
-            cascade.clear();
-        }
+        return new FreeCellGame(0, true);
     }
 
     private void deal(final List<Card> cards) {
         for (int i = 0; i < cards.size(); i++) {
             this.cascades.get(i % CASCADE_COUNT).add(cards.get(i));
         }
+    }
+
+    /** Alias kept for older call sites / status text. */
+    public long getSeed() {
+        return this.gameNumber;
     }
 
     public Optional<Card> getFreeCell(final int index) {
@@ -299,15 +302,15 @@ public class FreeCellGame {
     }
 
     /**
-     * Auto-moves safe cards to foundations (XP FreeCell "unneeded card" transfer).
+     * Auto-moves safe cards to foundations (classic "unneeded card" transfer).
      * <p>
-     * Safe rule (classic / MS-style): Aces always; otherwise only when both opposite-color
-     * foundations are built high enough that the card cannot be needed for tableau packing
+     * Safe rule: Aces always; otherwise only when both opposite-color foundations are built
+     * high enough that the card cannot be needed for tableau packing
      * ({@code rank <= min(opposite foundation ranks) + 1}, empty suit = 0).
      * <p>
      * Any transfers performed here are appended to the <em>current</em> undo step so that
      * one Undo rewinds the player move and all following auto-moves together (verified on
-     * original XP FreeCell).
+     * original classic FreeCell).
      *
      * @return number of cards moved to foundations
      */
@@ -449,7 +452,7 @@ public class FreeCellGame {
             }
             case FOUNDATION -> {
                 this.checkFoundationIndex(from.getIndex());
-                // XP FreeCell: home cells are sinks only (cannot take back into play).
+                // Classic FreeCell: home cells are sinks only (cannot take back into play).
                 // Undo still uses takeCards() directly when reversing a recorded step.
                 yield false;
             }

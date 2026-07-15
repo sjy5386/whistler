@@ -3,7 +3,6 @@ package com.sysbot32.whistler.freecell;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FreeCellGameTest {
     @Test
     void dealDistributesFiftyTwoCardsFaceUpAcrossEightCascades() {
-        final FreeCellGame game = new FreeCellGame(12345L);
+        final FreeCellGame game = new FreeCellGame(12345);
         int total = 0;
         for (int i = 0; i < FreeCellGame.CASCADE_COUNT; i++) {
             final int size = game.getCascade(i).size();
@@ -26,21 +25,22 @@ class FreeCellGameTest {
         assertEquals(0, game.countEmptyCascades());
         assertEquals(GameStatus.PLAYING, game.getStatus());
         assertEquals(0, game.getFoundationCardCount());
+        assertEquals(12345, game.getGameNumber());
     }
 
     @Test
-    void sameSeedProducesSameDeal() {
-        final FreeCellGame a = new FreeCellGame(99L);
-        final FreeCellGame b = new FreeCellGame(99L);
+    void sameGameNumberProducesSameDeal() {
+        final FreeCellGame a = new FreeCellGame(99);
+        final FreeCellGame b = new FreeCellGame(99);
         for (int i = 0; i < FreeCellGame.CASCADE_COUNT; i++) {
             assertEquals(a.getCascade(i), b.getCascade(i));
         }
     }
 
     @Test
-    void differentSeedsUsuallyDiffer() {
-        final FreeCellGame a = new FreeCellGame(1L);
-        final FreeCellGame b = new FreeCellGame(2L);
+    void differentGameNumbersUsuallyDiffer() {
+        final FreeCellGame a = new FreeCellGame(1);
+        final FreeCellGame b = new FreeCellGame(2);
         boolean differ = false;
         for (int i = 0; i < FreeCellGame.CASCADE_COUNT; i++) {
             if (!a.getCascade(i).equals(b.getCascade(i))) {
@@ -49,6 +49,12 @@ class FreeCellGameTest {
             }
         }
         assertTrue(differ);
+    }
+
+    @Test
+    void rejectsNonPositiveGameNumber() {
+        assertThrows(IllegalArgumentException.class, () -> new FreeCellGame(0));
+        assertThrows(IllegalArgumentException.class, () -> new FreeCellGame(-1));
     }
 
     @Test
@@ -275,7 +281,7 @@ class FreeCellGameTest {
     @Test
     void undoBatchesUserMoveWithFollowingAutoFoundationMoves() {
         // User moves ♥A to free cell; auto-move then sends ♥A (and safe followers) home.
-        // One Undo must reverse autos + the user move together (XP FreeCell behavior).
+        // One Undo must reverse autos + the user move together (classic FreeCell behavior).
         final FreeCellGame game = FreeCellGame.emptyBoard();
         game.pushCascadeForTest(0, new Card(Suit.HEARTS, Rank.ACE));
         game.pushCascadeForTest(1, new Card(Suit.CLUBS, Rank.ACE));
@@ -315,13 +321,17 @@ class FreeCellGameTest {
     }
 
     @Test
-    void randomInjectionMatchesSeedConstructor() {
-        final long seed = 555L;
-        final FreeCellGame a = new FreeCellGame(seed);
-        final FreeCellGame b = new FreeCellGame(seed, new Random(seed));
-        for (int i = 0; i < FreeCellGame.CASCADE_COUNT; i++) {
-            assertEquals(a.getCascade(i), b.getCascade(i));
-        }
+    void numberedGameOneMatchesKnownDealLayout() {
+        final FreeCellGame game = new FreeCellGame(1);
+        // First row dealt left-to-right (cascade bottoms): JD 2D 9H JC 5D 7H 7C 5H
+        assertEquals("J♦", game.getCascade(0).get(0).displayLabel());
+        assertEquals("2♦", game.getCascade(1).get(0).displayLabel());
+        assertEquals("9♥", game.getCascade(2).get(0).displayLabel());
+        assertEquals("J♣", game.getCascade(3).get(0).displayLabel());
+        assertEquals("5♦", game.getCascade(4).get(0).displayLabel());
+        assertEquals("7♥", game.getCascade(5).get(0).displayLabel());
+        assertEquals("7♣", game.getCascade(6).get(0).displayLabel());
+        assertEquals("5♥", game.getCascade(7).get(0).displayLabel());
     }
 
     @Test

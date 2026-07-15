@@ -93,6 +93,10 @@ public class FreeCellFrame extends JFrame {
         newItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
         newItem.addActionListener(e -> this.newGame());
 
+        final JMenuItem selectItem = new JMenuItem("Select Game Number...", KeyEvent.VK_S);
+        selectItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0));
+        selectItem.addActionListener(e -> this.selectGame());
+
         final JMenuItem undoItem = new JMenuItem("Undo", KeyEvent.VK_U);
         undoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         undoItem.addActionListener(e -> this.undo());
@@ -101,6 +105,7 @@ public class FreeCellFrame extends JFrame {
         exitItem.addActionListener(e -> this.exit());
 
         gameMenu.add(newItem);
+        gameMenu.add(selectItem);
         gameMenu.add(undoItem);
         gameMenu.addSeparator();
         gameMenu.add(exitItem);
@@ -114,7 +119,8 @@ public class FreeCellFrame extends JFrame {
                         + "Click a card, then click a destination (or drag).\n"
                         + "Double-click: move to foundation if legal.\n"
                         + "Empty free cells / columns enable supermoves.\n"
-                        + "F2: new game\n"
+                        + "F2: new game (random #1–32000)\n"
+                        + "F3: select game number\n"
                         + "Ctrl/Cmd+Z: undo",
                 "About FreeCell",
                 JOptionPane.INFORMATION_MESSAGE
@@ -127,11 +133,50 @@ public class FreeCellFrame extends JFrame {
     }
 
     private void newGame() {
+        this.startGame(new FreeCellGame());
+    }
+
+    private void selectGame() {
+        final int current = Math.max(1, this.game.getGameNumber());
+        final String input = (String) JOptionPane.showInputDialog(
+                this,
+                "Game number (1–" + NumberedDeal.EXTENDED_MAX_GAME + "):",
+                "Select Game Number",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                null,
+                Integer.toString(current)
+        );
+        if (input == null) {
+            return;
+        }
+        final String trimmed = input.trim();
+        final int number;
+        try {
+            number = Integer.parseInt(trimmed);
+        } catch (final NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, "Please enter a whole number.", "Select Game Number",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (number < 1 || number > NumberedDeal.EXTENDED_MAX_GAME) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Game number must be between 1 and " + NumberedDeal.EXTENDED_MAX_GAME + ".",
+                    "Select Game Number",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
+        this.startGame(new FreeCellGame(number));
+    }
+
+    private void startGame(final FreeCellGame next) {
         if (!this.gameCounted && this.game.getMoveCount() > 0 && !this.game.isWon()) {
             this.incrementStat(CONFIG_GAMES_PLAYED);
             this.gameCounted = true;
         }
-        this.game = new FreeCellGame();
+        this.game = next;
         this.selection = null;
         this.winDialogShown = false;
         this.gameCounted = false;
@@ -161,9 +206,9 @@ public class FreeCellFrame extends JFrame {
         final String won = this.config.get(CONFIG_GAMES_WON, "0");
         final String played = this.config.get(CONFIG_GAMES_PLAYED, "0");
         this.statusLabel.setText(String.format(
-                "Moves: %d   Seed: %d   Won: %s / Played: %s%s",
+                "Moves: %d   Game #%d   Won: %s / Played: %s%s",
                 this.game.getMoveCount(),
-                this.game.getSeed(),
+                this.game.getGameNumber(),
                 won,
                 played,
                 this.game.isWon() ? "   — You win!" : ""
@@ -263,7 +308,7 @@ public class FreeCellFrame extends JFrame {
         }
         return switch (hit.pile().getType()) {
             case FREE_CELL -> this.game.getFreeCell(hit.pile().getIndex()).isPresent();
-            // XP FreeCell: home cells are not selectable sources (cannot take cards back).
+            // Classic FreeCell: home cells are not selectable sources (cannot take cards back).
             case FOUNDATION -> false;
             case CASCADE -> this.game.validSequenceLengthFromTop(
                     hit.pile().getIndex(), hit.cardCount()) == hit.cardCount();
@@ -572,7 +617,7 @@ public class FreeCellFrame extends JFrame {
         }
 
         /**
-         * Decorative king face between free cells and foundations (classic MS FreeCell chrome).
+         * Decorative king face between free cells and foundations (classic FreeCell chrome).
          * Not interactive — pure ornament.
          */
         private void paintKingBadge(final Graphics2D g2, final Rectangle r) {
@@ -627,7 +672,7 @@ public class FreeCellFrame extends JFrame {
             g2.fillOval(leftEyeX - 1, eyeY - 1, eyeW, eyeH);
             g2.fillOval(rightEyeX - 1, eyeY - 1, eyeW, eyeH);
 
-            // Classic FreeCell: eyes glance left/right only (no vertical tracking).
+            // Eyes glance left/right only (classic FreeCell chrome).
             int pupilDx = 0;
             if (this.cursorPoint != null) {
                 final double vx = this.cursorPoint.x - cx;
