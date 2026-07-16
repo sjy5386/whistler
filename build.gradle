@@ -33,4 +33,31 @@ subprojects {
     test {
         useJUnitPlatform()
     }
+
+    // Executable fat JAR for app modules only (java -jar …/build/libs/*-all.jar).
+    pluginManager.withPlugin('application') {
+        tasks.register('fatJar', Jar) {
+            group = 'build'
+            description = 'Executable JAR with runtime dependencies.'
+            archiveClassifier = 'all'
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+            from sourceSets.main.output
+            dependsOn configurations.runtimeClasspath
+            from {
+                configurations.runtimeClasspath.collect { file ->
+                    file.directory ? file : zipTree(file)
+                }
+            }
+            exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/*.EC'
+        }
+
+        afterEvaluate {
+            tasks.named('fatJar', Jar) {
+                manifest {
+                    attributes('Main-Class': application.mainClass.get())
+                }
+            }
+        }
+    }
 }
