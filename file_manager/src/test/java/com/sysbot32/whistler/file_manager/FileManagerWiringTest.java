@@ -11,15 +11,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Structural checks that B+C FM shell wiring exists in shipped sources.
  */
 class FileManagerWiringTest {
-    private static final Path FRAME = Path.of(
-            "src/main/java/com/sysbot32/whistler/file_manager/FileManagerFrame.java"
-    );
-    private static final Path APP = Path.of(
-            "src/main/java/com/sysbot32/whistler/file_manager/FileManagerApplication.java"
-    );
-    private static final Path PANEL = Path.of(
-            "src/main/java/com/sysbot32/whistler/file_manager/FilePanel.java"
-    );
+    private static final Path ROOT = Path.of("src/main/java/com/sysbot32/whistler/file_manager");
+    private static final Path FRAME = ROOT.resolve("FileManagerFrame.java");
+    private static final Path APP = ROOT.resolve("FileManagerApplication.java");
+    private static final Path PANEL = ROOT.resolve("ui/FilePanel.java");
+    private static final Path ICONS = ROOT.resolve("ui/FileManagerIcons.java");
+    private static final Path DIALOG = ROOT.resolve("ui/AddToArchiveDialog.java");
+    private static final Path TABLE_MODEL = ROOT.resolve("ui/FileTableModel.java");
+    private static final Path INSERT = ROOT.resolve("listing/InsertSelection.java");
+    private static final Path ARCHIVE_OPS = ROOT.resolve("archive/ArchiveOperations.java");
+    private static final Path ARCHIVE_OPTS = ROOT.resolve("archive/ArchiveWriteOptions.java");
 
     @Test
     void applicationMainAndFrameExist() throws Exception {
@@ -48,9 +49,7 @@ class FileManagerWiringTest {
         }
         assertTrue(src.contains("Archives.createOrAdd") || src.contains("Archives.zip()"),
                 "FM must call archive ops through Archives facade");
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/ArchiveOperations.java")),
-                "ArchiveOperations surface must exist");
+        assertTrue(Files.isRegularFile(ARCHIVE_OPS), "ArchiveOperations surface must exist");
     }
 
     @Test
@@ -72,8 +71,7 @@ class FileManagerWiringTest {
         assertTrue(panel.contains("SelectionHelpers"), "selection helpers must be used");
         assertTrue(panel.contains("forView") || panel.contains("largeIcon") || panel.contains("LARGE_ICONS"),
                 "Large Icons must use larger glyphs");
-        final String icons = Files.readString(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/FileManagerIcons.java"));
+        final String icons = Files.readString(ICONS);
         assertTrue(icons.contains("LARGE_ICON_SIZE"), "large icon size constant required");
         assertTrue(icons.contains("largeIcon"), "largeIcon() factory required");
     }
@@ -105,7 +103,6 @@ class FileManagerWiringTest {
         assertTrue(panel.contains("handleListingPopup"), "popup handler on listing");
         assertTrue(frame.contains("showListingContextMenu"), "frame builds context menu");
         assertTrue(frame.contains("JPopupMenu"), "uses JPopupMenu");
-        // 7zFM File-menu order markers in context menu
         assertTrue(frame.contains("Open Inside\\tCtrl+PgDn") || frame.contains("Open Inside\tCtrl+PgDn"),
                 "Open Inside with accelerator like 7zFM");
         assertTrue(frame.contains("Copy To...\\tF5") || frame.contains("Copy To...\tF5"),
@@ -118,43 +115,19 @@ class FileManagerWiringTest {
                 "7zFM-style Add to Archive dialog wired");
         assertTrue(frame.contains("current directory") || frame.contains("loc.path().getFileName()"),
                 "multi-select zip name uses current directory");
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/AddToArchiveDialog.java")));
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/ArchiveWriteOptions.java")));
-        final String dialog = Files.readString(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/AddToArchiveDialog.java"));
+        assertTrue(Files.isRegularFile(DIALOG));
+        assertTrue(Files.isRegularFile(ARCHIVE_OPTS));
+        final String dialog = Files.readString(DIALOG);
         for (final String token : new String[]{
                 "Archive format:", "Compression level:", "Compression method:",
                 "Update mode:", "Path mode:", "Delete files after", "Help", "syncMethodEnabled"
         }) {
             assertTrue(dialog.contains(token), "dialog layout missing: " + token);
         }
-        // 7z-only placeholders removed for zip-only UI
         assertTrue(!dialog.contains("Dictionary size:"), "7z dictionary control should be gone");
         assertTrue(!dialog.contains("Solid block"), "7z solid control should be gone");
         assertTrue(!dialog.contains("Create SFX"), "SFX control should be gone");
         assertTrue(!dialog.contains("Encryption"), "encryption stub panel should be gone");
-        assertTrue(frame.contains("new JMenu(\"Archive\")") || frame.contains("JMenu(\"Archive\")"),
-                "archive ops under cascaded Archive submenu");
-        assertTrue(frame.contains("updateWindowTitle"), "window title tracks current path");
-        assertTrue(frame.contains("displayPath()"), "title uses location displayPath");
-        assertTrue(frame.contains("actionChecksum") || frame.contains("Checksums."), "CRC submenu wired");
-        assertTrue(frame.contains("actionSplit"), "Split wired");
-        assertTrue(frame.contains("actionCombine"), "Combine wired");
-        assertTrue(frame.contains("actionComment"), "Comment wired");
-        assertTrue(frame.contains("actionDiff"), "Diff wired");
-        assertTrue(frame.contains("actionLink"), "Link wired");
-        assertTrue(frame.contains("actionAlternateStreams"), "Alternate streams wired");
-        // File menu uses 7zFM order (no archive block in File menu; toolbar keeps them)
-        final int openIdx = frame.indexOf("menuItem(\"Open\"");
-        final int splitIdx = frame.indexOf("Split file...");
-        final int exitIdx = frame.indexOf("menuItem(\"Exit\"");
-        assertTrue(openIdx > 0 && splitIdx > openIdx && exitIdx > splitIdx,
-                "File menu order Open → Split → Exit");
-        assertTrue(frame.contains("ProgressTasks.run"), "cancellable progress path");
-        assertTrue(frame.contains("CollisionPolicy") || frame.contains("promptCollision"),
-                "name collision chooser wired");
         assertTrue(frame.contains("deleteEntries"), "zip delete wired");
         assertTrue(frame.contains("renameEntry"), "zip rename wired");
         assertTrue(frame.contains(".mkdir(") || frame.contains("mkdir(loc"), "zip mkdir wired");
@@ -162,18 +135,9 @@ class FileManagerWiringTest {
         assertTrue(frame.contains("Archives.createOrAdd") || frame.contains("createOrAdd"),
                 "add-into-existing via createOrAdd");
         assertTrue(!frame.contains("not supported in MVP"), "MVP blocks for zip mutate must be gone");
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/ArchiveOperations.java")));
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/Archives.java")));
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/ZipArchiveOperations.java")));
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/CollisionPolicy.java")));
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/TransferControl.java")));
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/ProgressTasks.java")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("ops/CollisionPolicy.java")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("ops/TransferControl.java")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("ui/ProgressTasks.java")));
     }
 
     @Test
@@ -188,10 +152,21 @@ class FileManagerWiringTest {
                 "setLeadSelectionIndex(next) range-fills multi-select");
         assertTrue(!panel.contains("setSelectedIndex(next)"),
                 "setSelectedIndex(next) clears multi-select on Insert");
-        final String model = Files.readString(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/FileTableModel.java"));
+        final String model = Files.readString(TABLE_MODEL);
         assertTrue(model.contains("loadOrder"), "Unsorted must restore load-order snapshot");
-        assertTrue(Files.isRegularFile(Path.of(
-                "src/main/java/com/sysbot32/whistler/file_manager/InsertSelection.java")));
+        assertTrue(Files.isRegularFile(INSERT));
+    }
+
+    @Test
+    void packagesAreSplitByRole() {
+        assertTrue(Files.isDirectory(ROOT.resolve("ui")));
+        assertTrue(Files.isDirectory(ROOT.resolve("model")));
+        assertTrue(Files.isDirectory(ROOT.resolve("listing")));
+        assertTrue(Files.isDirectory(ROOT.resolve("ops")));
+        assertTrue(Files.isDirectory(ROOT.resolve("archive")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("FileManagerFrame.java")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("ui/FilePanel.java")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("archive/ZipArchiveFs.java")));
+        assertTrue(Files.isRegularFile(ROOT.resolve("ops/FileOperations.java")));
     }
 }

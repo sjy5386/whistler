@@ -1,6 +1,14 @@
 package com.sysbot32.whistler.file_manager;
 
 import com.sysbot32.whistler.config.Config;
+import com.sysbot32.whistler.file_manager.archive.ArchiveWriteOptions;
+import com.sysbot32.whistler.file_manager.archive.Archives;
+import com.sysbot32.whistler.file_manager.listing.DirectoryListing;
+import com.sysbot32.whistler.file_manager.listing.EntryComparators;
+import com.sysbot32.whistler.file_manager.model.BrowseLocation;
+import com.sysbot32.whistler.file_manager.model.FileEntry;
+import com.sysbot32.whistler.file_manager.ops.*;
+import com.sysbot32.whistler.file_manager.ui.*;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -1291,7 +1299,7 @@ public final class FileManagerFrame extends JFrame {
     }
 
     /** Accept plain bytes or trailing K/M/G (1024-based). */
-    static long parseVolumeSize(final String raw) {
+    public static long parseVolumeSize(final String raw) {
         String s = raw.trim().replace("_", "").replace(",", "");
         long mult = 1L;
         if (s.length() >= 2) {
