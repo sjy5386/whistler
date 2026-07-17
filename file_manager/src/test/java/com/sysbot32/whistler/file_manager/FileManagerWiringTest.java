@@ -8,8 +8,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Structural checks that B shell wiring exists in shipped sources
- * (toolbar commands, core keys, zip open-inside / extract / add).
+ * Structural checks that B+C FM shell wiring exists in shipped sources.
  */
 class FileManagerWiringTest {
     private static final Path FRAME = Path.of(
@@ -17,6 +16,9 @@ class FileManagerWiringTest {
     );
     private static final Path APP = Path.of(
             "src/main/java/com/sysbot32/whistler/file_manager/FileManagerApplication.java"
+    );
+    private static final Path PANEL = Path.of(
+            "src/main/java/com/sysbot32/whistler/file_manager/FilePanel.java"
     );
 
     @Test
@@ -26,11 +28,12 @@ class FileManagerWiringTest {
         final String app = Files.readString(APP);
         assertTrue(app.contains("FileManagerFrame"));
         assertTrue(app.contains("file_manager.properties"));
-        assertTrue(app.contains("public static void main"));
+        assertTrue(app.contains("void main") && app.contains("@UtilityClass"),
+                "main entry via @UtilityClass");
     }
 
     @Test
-    void toolbarAndCoreKeyBindingsWired() throws Exception {
+    void coreFmAndArchiveToolbarWired() throws Exception {
         final String src = Files.readString(FRAME);
         for (final String token : new String[]{
                 "actionAdd", "actionExtract", "actionTest",
@@ -46,9 +49,33 @@ class FileManagerWiringTest {
     }
 
     @Test
+    void tierCSelectionViewBookmarksAndFileExtrasWired() throws Exception {
+        final String frame = Files.readString(FRAME);
+        final String panel = Files.readString(PANEL);
+        for (final String token : new String[]{
+                "selectByType", "invertSelection", "deselectAll",
+                "Flat View", "setFlatView", "ViewMode",
+                "FolderBookmarks", "FolderHistory", "openBookmark", "setBookmark",
+                "showHistory", "openRoot", "openOutside", "actionView", "actionEdit",
+                "actionCreateFile", "openSameInOther", "openCurrentInOther",
+                "VK_F3", "VK_F4", "SHIFT_DOWN_MASK", "ALT_DOWN_MASK",
+                "rebuildFavoritesMenu", "Add folder to Favorites as"
+        }) {
+            assertTrue(frame.contains(token) || panel.contains(token), "missing C wiring: " + token);
+        }
+        assertTrue(panel.contains("FlatListing.list"), "Flat view must call FlatListing");
+        assertTrue(panel.contains("SelectionHelpers"), "selection helpers must be used");
+        assertTrue(panel.contains("forView") || panel.contains("largeIcon") || panel.contains("LARGE_ICONS"),
+                "Large Icons must use larger glyphs");
+        final String icons = Files.readString(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/FileManagerIcons.java"));
+        assertTrue(icons.contains("LARGE_ICON_SIZE"), "large icon size constant required");
+        assertTrue(icons.contains("largeIcon"), "largeIcon() factory required");
+    }
+
+    @Test
     void panelOpenAndUpControlWiredLike7zFm() throws Exception {
-        final Path panel = Path.of("src/main/java/com/sysbot32/whistler/file_manager/FilePanel.java");
-        final String src = Files.readString(panel);
+        final String src = Files.readString(PANEL);
         assertTrue(src.contains("fileManagerOpen"), "Enter must open, not select-next-row");
         assertTrue(src.contains("selectNextRowCell"), "default Enter action remapped");
         assertTrue(src.contains("openRowAtPoint"), "double-click opens row under cursor");
@@ -61,5 +88,73 @@ class FileManagerWiringTest {
         final String src = Files.readString(FRAME);
         assertTrue(src.contains("KEY_DUAL, \"false\"") || src.contains("get(KEY_DUAL, \"false\")"),
                 "dual panel should default false");
+    }
+
+    @Test
+    void contextMenuAndProgressAndZipMutationsWired() throws Exception {
+        final String frame = Files.readString(FRAME);
+        final String panel = Files.readString(PANEL);
+        assertTrue(panel.contains("isPopupTrigger"), "listing must handle popup-trigger");
+        assertTrue(panel.contains("setContextMenuHandler") || panel.contains("contextMenuHandler"),
+                "panel must accept context menu handler");
+        assertTrue(panel.contains("handleListingPopup"), "popup handler on listing");
+        assertTrue(frame.contains("showListingContextMenu"), "frame builds context menu");
+        assertTrue(frame.contains("JPopupMenu"), "uses JPopupMenu");
+        // 7zFM File-menu order markers in context menu
+        assertTrue(frame.contains("Open Inside\\tCtrl+PgDn") || frame.contains("Open Inside\tCtrl+PgDn"),
+                "Open Inside with accelerator like 7zFM");
+        assertTrue(frame.contains("Copy To...\\tF5") || frame.contains("Copy To...\tF5"),
+                "Copy To... label like 7zFM");
+        assertTrue(frame.contains("Add to archive..."), "archive plugin items present");
+        assertTrue(frame.contains("new JMenu(\"Archive\")") || frame.contains("JMenu(\"Archive\")"),
+                "archive ops under cascaded Archive submenu");
+        assertTrue(frame.contains("updateWindowTitle"), "window title tracks current path");
+        assertTrue(frame.contains("displayPath()"), "title uses location displayPath");
+        assertTrue(frame.contains("actionChecksum") || frame.contains("Checksums."), "CRC submenu wired");
+        assertTrue(frame.contains("actionSplit"), "Split wired");
+        assertTrue(frame.contains("actionCombine"), "Combine wired");
+        assertTrue(frame.contains("actionComment"), "Comment wired");
+        assertTrue(frame.contains("actionDiff"), "Diff wired");
+        assertTrue(frame.contains("actionLink"), "Link wired");
+        assertTrue(frame.contains("actionAlternateStreams"), "Alternate streams wired");
+        // File menu uses 7zFM order (no archive block in File menu; toolbar keeps them)
+        final int openIdx = frame.indexOf("menuItem(\"Open\"");
+        final int splitIdx = frame.indexOf("Split file...");
+        final int exitIdx = frame.indexOf("menuItem(\"Exit\"");
+        assertTrue(openIdx > 0 && splitIdx > openIdx && exitIdx > splitIdx,
+                "File menu order Open → Split → Exit");
+        assertTrue(frame.contains("ProgressTasks.run"), "cancellable progress path");
+        assertTrue(frame.contains("CollisionPolicy") || frame.contains("promptCollision"),
+                "name collision chooser wired");
+        assertTrue(frame.contains("ZipArchiveFs.deleteEntries"), "zip delete wired");
+        assertTrue(frame.contains("ZipArchiveFs.renameEntry"), "zip rename wired");
+        assertTrue(frame.contains("ZipArchiveFs.mkdir"), "zip mkdir wired");
+        assertTrue(frame.contains("ZipArchiveFs.copyOrMoveToDisk"), "zip copy/move wired");
+        assertTrue(!frame.contains("not supported in MVP"), "MVP blocks for zip mutate must be gone");
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/CollisionPolicy.java")));
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/TransferControl.java")));
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/ProgressTasks.java")));
+    }
+
+    @Test
+    void renameAndListInsertUseCorrectShippedPaths() throws Exception {
+        final String frame = Files.readString(FRAME);
+        final String panel = Files.readString(PANEL);
+        assertTrue(frame.contains("resolveDiskEntry(entry)"),
+                "F2 rename must use resolveDiskEntry for flat-view paths");
+        assertTrue(panel.contains("InsertSelection.toggleAndAdvanceLead"),
+                "Insert must use InsertSelection (moveLead, not setLeadSelectionIndex range-fill)");
+        assertTrue(!panel.contains("setLeadSelectionIndex(next)"),
+                "setLeadSelectionIndex(next) range-fills multi-select");
+        assertTrue(!panel.contains("setSelectedIndex(next)"),
+                "setSelectedIndex(next) clears multi-select on Insert");
+        final String model = Files.readString(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/FileTableModel.java"));
+        assertTrue(model.contains("loadOrder"), "Unsorted must restore load-order snapshot");
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/InsertSelection.java")));
     }
 }

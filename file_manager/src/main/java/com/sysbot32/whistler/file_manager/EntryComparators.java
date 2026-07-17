@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.file_manager;
 
+import lombok.experimental.UtilityClass;
+
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.List;
  *   <li>then the active column key, which does reverse on descending</li>
  * </ol>
  */
+@UtilityClass
 public final class EntryComparators {
     public static final int COL_NAME = 0;
     public static final int COL_SIZE = 1;
@@ -20,10 +23,6 @@ public final class EntryComparators {
     public static final int COL_ACCESSED = 4;
     public static final int COL_ATTR = 5;
     public static final int COL_PACKED = 6;
-
-    private EntryComparators() {
-    }
-
     /**
      * Full comparator for a column. Parent-link and directory grouping are fixed;
      * only the column key respects {@code ascending}.

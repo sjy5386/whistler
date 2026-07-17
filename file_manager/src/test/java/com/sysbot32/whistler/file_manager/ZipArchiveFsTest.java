@@ -125,4 +125,67 @@ class ZipArchiveFsTest {
         assertThrows(Exception.class, () -> ZipArchiveFs.extract(evilZip, List.of(), out, true));
         assertTrue(Files.notExists(this.tempDir.resolve("evil.txt")));
     }
+
+    @Test
+    void deleteRenameMkdirAndCopyMoveRoundTrip() throws Exception {
+        final Path a = this.tempDir.resolve("keep.txt");
+        final Path b = this.tempDir.resolve("gone.txt");
+        final Path folder = Files.createDirectory(this.tempDir.resolve("box"));
+        Files.writeString(a, "KEEP");
+        Files.writeString(b, "GONE");
+        Files.writeString(folder.resolve("inner.txt"), "INNER");
+
+        final Path zip = this.tempDir.resolve("mut.zip");
+        ZipArchiveFs.createZip(zip, List.of(a, b, folder));
+
+        // delete gone.txt
+        final int removed = ZipArchiveFs.deleteEntries(zip, List.of("gone.txt"));
+        assertTrue(removed >= 1);
+        assertTrue(ZipArchiveFs.list(zip, "").stream().noneMatch(e -> "gone.txt".equals(e.name())));
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "keep.txt".equals(e.name())));
+
+        // rename keep.txt → kept.txt
+        ZipArchiveFs.renameEntry(zip, "keep.txt", "kept.txt");
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "kept.txt".equals(e.name())));
+        assertTrue(ZipArchiveFs.list(zip, "").stream().noneMatch(e -> "keep.txt".equals(e.name())));
+
+        // mkdir inside zip
+        ZipArchiveFs.mkdir(zip, "", "fresh");
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "fresh".equals(e.name()) && e.directory()));
+
+        // copy folder out
+        final Path copyOut = Files.createDirectory(this.tempDir.resolve("copy-out"));
+        final int copied = ZipArchiveFs.copyOrMoveToDisk(zip, List.of("box/"), copyOut, false, null);
+        assertTrue(copied >= 1);
+        assertEquals("INNER", Files.readString(copyOut.resolve("box/inner.txt")));
+        // still in archive after copy
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "box".equals(e.name()) && e.directory()));
+
+        // move kept.txt out
+        final Path moveOut = Files.createDirectory(this.tempDir.resolve("move-out"));
+        final int moved = ZipArchiveFs.copyOrMoveToDisk(zip, List.of("kept.txt"), moveOut, true, null);
+        assertEquals(1, moved);
+        assertEquals("KEEP", Files.readString(moveOut.resolve("kept.txt")));
+        assertTrue(ZipArchiveFs.list(zip, "").stream().noneMatch(e -> "kept.txt".equals(e.name())));
+
+        // rename folder leaf
+        ZipArchiveFs.renameEntry(zip, "box/", "crate");
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "crate".equals(e.name()) && e.directory()));
+        assertTrue(ZipArchiveFs.list(zip, "crate/").stream().anyMatch(e -> "inner.txt".equals(e.name())));
+    }
+
+    @Test
+    void extractCancelStopsWork() throws Exception {
+        final Path a = this.tempDir.resolve("big-a.txt");
+        final Path b = this.tempDir.resolve("big-b.txt");
+        Files.writeString(a, "A");
+        Files.writeString(b, "B");
+        final Path zip = this.tempDir.resolve("cancel.zip");
+        ZipArchiveFs.createZip(zip, List.of(a, b));
+
+        final TransferControl control = new TransferControl();
+        control.cancel();
+        final Path out = Files.createDirectory(this.tempDir.resolve("cancel-out"));
+        assertThrows(Exception.class, () -> ZipArchiveFs.extract(zip, List.of(), out, true, control));
+    }
 }

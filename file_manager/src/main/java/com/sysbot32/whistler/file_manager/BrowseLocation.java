@@ -1,5 +1,8 @@
 package com.sysbot32.whistler.file_manager;
 
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.experimental.Accessors;
 
@@ -12,6 +15,8 @@ import java.util.Objects;
  */
 @Getter
 @Accessors(fluent = true)
+@EqualsAndHashCode
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BrowseLocation {
     public enum Kind {
         DISK,
@@ -23,18 +28,14 @@ public final class BrowseLocation {
     /** Normalized internal zip path: empty = root; folders end with {@code /}. */
     private final String zipInternalPath;
 
-    private BrowseLocation(final Kind kind, final Path path, final String zipInternalPath) {
-        this.kind = Objects.requireNonNull(kind, "kind");
-        this.path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
-        this.zipInternalPath = normalizeZipInternal(zipInternalPath);
-    }
-
     public static BrowseLocation disk(final Path directory) {
-        return new BrowseLocation(Kind.DISK, directory, "");
+        Objects.requireNonNull(directory, "directory");
+        return new BrowseLocation(Kind.DISK, directory.toAbsolutePath().normalize(), "");
     }
 
     public static BrowseLocation zip(final Path zipFile, final String internalPath) {
-        return new BrowseLocation(Kind.ZIP, zipFile, internalPath);
+        Objects.requireNonNull(zipFile, "zipFile");
+        return new BrowseLocation(Kind.ZIP, zipFile.toAbsolutePath().normalize(), normalizeZipInternal(internalPath));
     }
 
     public boolean isDisk() {
@@ -81,9 +82,6 @@ public final class BrowseLocation {
 
     public BrowseLocation enterDirectory(final String name) {
         Objects.requireNonNull(name, "name");
-        if ("..".equals(name)) {
-            return parent();
-        }
         if (this.kind == Kind.DISK) {
             return disk(this.path.resolve(name));
         }
@@ -91,7 +89,6 @@ public final class BrowseLocation {
         return zip(this.path, next);
     }
 
-    /** Resolve a child name to a disk path (disk locations only). */
     public Path resolveDiskChild(final String name) {
         if (this.kind != Kind.DISK) {
             throw new IllegalStateException("Not a disk location");
@@ -130,24 +127,6 @@ public final class BrowseLocation {
             return "";
         }
         return s.substring(0, slash + 1);
-    }
-
-    @Override
-    public boolean equals(final Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (!(o instanceof BrowseLocation that)) {
-            return false;
-        }
-        return this.kind == that.kind
-                && Objects.equals(this.path, that.path)
-                && Objects.equals(this.zipInternalPath, that.zipInternalPath);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(this.kind, this.path, this.zipInternalPath);
     }
 
     @Override

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EntryComparatorsTest {
@@ -127,6 +128,28 @@ class EntryComparatorsTest {
         assertTrue(model.isSortAscending());
         assertEquals(EntryComparators.COL_SIZE, model.getSortColumn());
         assertEquals("a", model.getEntry(1).name()); // smaller first
+    }
+
+    @Test
+    void unsortedRestoresLoadOrderAfterColumnSort() {
+        final FileTableModel model = new FileTableModel();
+        // Deliberate load order: b then a (not name-sorted)
+        model.setEntries(List.of(
+                FileEntry.upLink(),
+                file("b", 2),
+                file("a", 1)
+        ));
+        // Default sorted=true applies name sort → a before b
+        assertEquals("a", model.getEntry(1).name());
+        assertEquals("b", model.getEntry(2).name());
+
+        model.sortBy(EntryComparators.COL_SIZE, false); // size desc: b then a
+        assertEquals("b", model.getEntry(1).name());
+
+        model.setUnsorted(); // must restore original load order b then a
+        assertFalse(model.isSorted());
+        assertEquals("b", model.getEntry(1).name());
+        assertEquals("a", model.getEntry(2).name());
     }
 
     private static FileEntry file(final String name, final long size) {

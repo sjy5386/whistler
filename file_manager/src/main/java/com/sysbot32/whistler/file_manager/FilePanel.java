@@ -1,15 +1,19 @@
 package com.sysbot32.whistler.file_manager;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.swing.AbstractAction;
 import javax.swing.ActionMap;
 import javax.swing.BorderFactory;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListModel;
 import javax.swing.InputMap;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -23,6 +27,7 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -42,8 +47,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -51,9 +58,16 @@ import java.util.function.Consumer;
  */
 @Slf4j
 public final class FilePanel extends JPanel {
+    private static final String CARD_DETAILS = "details";
+    private static final String CARD_LIST = "list";
+
     private final FileTableModel tableModel = new FileTableModel();
     @Getter
     private final JTable table = new JTable(this.tableModel);
+    private final DefaultListModel<FileEntry> listModel = new DefaultListModel<>();
+    private final JList<FileEntry> iconList = new JList<>(this.listModel);
+    private final CardLayout viewCards = new CardLayout();
+    private final JPanel viewHost = new JPanel(this.viewCards);
     private final PathAddressBar addressBar;
     /** 7zFM-style "Up One Level" control beside the address bar. */
     private final JButton upButton = new JButton(FileManagerIcons.pathUp());
@@ -69,11 +83,20 @@ public final class FilePanel extends JPanel {
     };
     private Runnable openHandler = () -> {
     };
+    private Consumer<BrowseLocation> navigationListener = loc -> {
+    };
+    /** Right-click popup; receives the listing component that was clicked. */
+    private Consumer<MouseEvent> contextMenuHandler = e -> {
+    };
+    @Getter
+    private boolean flatView;
+    @Getter
+    private ViewMode viewMode = ViewMode.DETAILS;
 
-    public FilePanel(final BrowseLocation initial, final boolean showHidden) {
+    public FilePanel(@NonNull final BrowseLocation initial, final boolean showHidden) {
         super(new BorderLayout(0, 2));
         this.showHidden = showHidden;
-        this.locationModel = Objects.requireNonNull(initial, "initial");
+        this.locationModel = initial;
         this.addressBar = new PathAddressBar(this.locationModel);
 
         this.setBorder(null);
@@ -105,18 +128,78 @@ public final class FilePanel extends JPanel {
         pathBar.add(this.addressBar, BorderLayout.CENTER);
 
         this.configureTable();
-        final JScrollPane scroll = new JScrollPane(this.table);
-        scroll.getViewport().setBackground(Color.WHITE);
-        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        // Aqua/ScrollPane default border often reads as a thin blue/gray frame under the list
-        scroll.setBorder(BorderFactory.createEmptyBorder());
-        scroll.setViewportBorder(BorderFactory.createEmptyBorder());
+        this.configureIconList();
+        final JScrollPane tableScroll = new JScrollPane(this.table);
+        tableScroll.getViewport().setBackground(Color.WHITE);
+        tableScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        tableScroll.setBorder(BorderFactory.createEmptyBorder());
+        tableScroll.setViewportBorder(BorderFactory.createEmptyBorder());
+
+        final JScrollPane listScroll = new JScrollPane(this.iconList);
+        listScroll.getViewport().setBackground(Color.WHITE);
+        listScroll.setBorder(BorderFactory.createEmptyBorder());
+        listScroll.setViewportBorder(BorderFactory.createEmptyBorder());
+
+        this.viewHost.add(tableScroll, CARD_DETAILS);
+        this.viewHost.add(listScroll, CARD_LIST);
+        this.viewCards.show(this.viewHost, CARD_DETAILS);
 
         this.add(pathBar, BorderLayout.NORTH);
-        this.add(scroll, BorderLayout.CENTER);
+        this.add(this.viewHost, BorderLayout.CENTER);
 
         this.updateUpButton();
         this.refreshAsync();
+    }
+
+    private void configureIconList() {
+        this.iconList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        this.iconList.setLayoutOrientation(JList.VERTICAL);
+        this.iconList.setVisibleRowCount(-1);
+        this.iconList.setFixedCellHeight(22);
+        this.iconList.setCellRenderer(new IconListRenderer());
+        this.iconList.setFocusTraversalKeysEnabled(false);
+        this.iconList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(final MouseEvent e) {
+                FilePanel.this.fireActivated();
+                FilePanel.this.handleListingPopup(e, FilePanel.this.iconList);
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !e.isPopupTrigger()) {
+                    final int index = FilePanel.this.iconList.locationToIndex(e.getPoint());
+                    if (index >= 0) {
+                        FilePanel.this.iconList.setSelectedIndex(index);
+                        FilePanel.this.openHandler.run();
+                    }
+                }
+            }
+
+            @Override
+            public void mouseReleased(final MouseEvent e) {
+                FilePanel.this.handleListingPopup(e, FilePanel.this.iconList);
+            }
+        });
+        this.iconList.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(final FocusEvent e) {
+                FilePanel.this.fireActivated();
+            }
+        });
+        this.iconList.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(final KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_INSERT) {
+                    FilePanel.this.toggleSelectionAtLead();
+                    e.consume();
+                } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    FilePanel.this.openHandler.run();
+                    e.consume();
+                }
+            }
+        });
+        this.iconList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                FilePanel.this.updateSelectionStatus();
+            }
+        });
     }
 
     private void configureTable() {
@@ -146,11 +229,17 @@ public final class FilePanel extends JPanel {
             @Override
             public void mousePressed(final MouseEvent e) {
                 FilePanel.this.fireActivated();
+                FilePanel.this.handleListingPopup(e, FilePanel.this.table);
                 // mousePressed is more reliable than mouseClicked (less loss if pointer moves slightly).
                 // Handle only here so we do not open twice (pressed + clicked).
-                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !e.isPopupTrigger()) {
                     FilePanel.this.openRowAtPoint(e);
                 }
+            }
+
+            @Override
+            public void mouseReleased(final MouseEvent e) {
+                FilePanel.this.handleListingPopup(e, FilePanel.this.table);
             }
         });
 
@@ -312,12 +401,191 @@ public final class FilePanel extends JPanel {
         };
     }
 
+    public void setNavigationListener(final Consumer<BrowseLocation> listener) {
+        this.navigationListener = listener != null ? listener : loc -> {
+        };
+    }
+
     public JTextField getPathField() {
         return this.addressBar.getEditor();
     }
 
+    public void setContextMenuHandler(final Consumer<MouseEvent> handler) {
+        this.contextMenuHandler = handler == null ? e -> {
+        } : handler;
+    }
+
+    /**
+     * Platform popup-trigger (macOS often fires on release): select row under cursor if needed, then open menu.
+     */
+    private void handleListingPopup(final MouseEvent e, final JComponent listing) {
+        if (!e.isPopupTrigger()) {
+            return;
+        }
+        selectRowAtPointIfNeeded(e, listing);
+        fireActivated();
+        this.contextMenuHandler.accept(e);
+    }
+
+    private void selectRowAtPointIfNeeded(final MouseEvent e, final JComponent listing) {
+        if (listing == this.table) {
+            final int row = this.table.rowAtPoint(e.getPoint());
+            if (row >= 0 && !this.table.isRowSelected(row)) {
+                this.table.getSelectionModel().setSelectionInterval(row, row);
+            }
+        } else if (listing == this.iconList) {
+            final int index = this.iconList.locationToIndex(e.getPoint());
+            if (index >= 0 && !this.iconList.isSelectedIndex(index)) {
+                this.iconList.setSelectedIndex(index);
+            }
+        }
+    }
+
     public void requestTableFocus() {
-        this.table.requestFocusInWindow();
+        if (this.viewMode == ViewMode.DETAILS) {
+            this.table.requestFocusInWindow();
+        } else {
+            this.iconList.requestFocusInWindow();
+        }
+    }
+
+    public void focusPathField() {
+        this.addressBar.getEditor().requestFocusInWindow();
+        this.addressBar.getEditor().selectAll();
+    }
+
+    public void setFlatView(final boolean flat) {
+        if (this.flatView == flat) {
+            return;
+        }
+        this.flatView = flat;
+        this.refreshAsync();
+    }
+
+    public void setViewMode(final ViewMode mode) {
+        this.viewMode = mode != null ? mode : ViewMode.DETAILS;
+        if (this.viewMode == ViewMode.DETAILS) {
+            this.viewCards.show(this.viewHost, CARD_DETAILS);
+        } else {
+            applyListLayout();
+            this.viewCards.show(this.viewHost, CARD_LIST);
+        }
+        syncListFromTableModel();
+        requestTableFocus();
+    }
+
+    private void applyListLayout() {
+        switch (this.viewMode) {
+            case LARGE_ICONS -> {
+                this.iconList.setLayoutOrientation(JList.HORIZONTAL_WRAP);
+                this.iconList.setVisibleRowCount(0);
+                // Room for 32px glyph + label under icon
+                this.iconList.setFixedCellHeight(64);
+                this.iconList.setFixedCellWidth(88);
+            }
+            case SMALL_ICONS -> {
+                this.iconList.setLayoutOrientation(JList.HORIZONTAL_WRAP);
+                this.iconList.setVisibleRowCount(0);
+                // Room for 24px glyph + text to the right
+                this.iconList.setFixedCellHeight(40);
+                this.iconList.setFixedCellWidth(100);
+            }
+            case LIST -> {
+                this.iconList.setLayoutOrientation(JList.VERTICAL);
+                this.iconList.setVisibleRowCount(-1);
+                this.iconList.setFixedCellHeight(22);
+                this.iconList.setFixedCellWidth(-1);
+            }
+            default -> {
+                // details uses table
+            }
+        }
+        this.iconList.revalidate();
+        this.iconList.repaint();
+    }
+
+    private void syncListFromTableModel() {
+        this.listModel.clear();
+        for (final FileEntry entry : this.tableModel.getEntries()) {
+            this.listModel.addElement(entry);
+        }
+    }
+
+    public void sortBy(final int column, final boolean ascending) {
+        this.tableModel.sortBy(column, ascending);
+        this.refreshHeaderLabels();
+        syncListFromTableModel();
+    }
+
+    public void setUnsorted() {
+        this.tableModel.setUnsorted();
+        this.refreshHeaderLabels();
+        syncListFromTableModel();
+    }
+
+    public void selectAllItems() {
+        applyRowSelection(SelectionHelpers.selectableRows(this.tableModel.getEntries()));
+    }
+
+    public void deselectAllItems() {
+        applyRowSelection(Set.of());
+    }
+
+    public void invertSelection() {
+        final Set<Integer> current = currentSelectedRows();
+        final Set<Integer> next = SelectionHelpers.invert(
+                current,
+                SelectionHelpers.selectableRows(this.tableModel.getEntries())
+        );
+        applyRowSelection(next);
+    }
+
+    public void selectByType(final boolean select) {
+        final FileEntry lead = getLeadEntry();
+        if (lead == null || lead.parentLink()) {
+            this.statusListener.accept("Select a file to match type");
+            return;
+        }
+        final Set<Integer> next = SelectionHelpers.applyTypeFilter(
+                currentSelectedRows(),
+                this.tableModel.getEntries(),
+                lead.name(),
+                select
+        );
+        applyRowSelection(next);
+    }
+
+    private Set<Integer> currentSelectedRows() {
+        final Set<Integer> rows = new HashSet<>();
+        if (this.viewMode == ViewMode.DETAILS) {
+            for (final int r : this.table.getSelectedRows()) {
+                rows.add(r);
+            }
+        } else {
+            for (final int r : this.iconList.getSelectedIndices()) {
+                rows.add(r);
+            }
+        }
+        return rows;
+    }
+
+    private void applyRowSelection(final Set<Integer> rows) {
+        if (this.viewMode == ViewMode.DETAILS) {
+            this.table.clearSelection();
+            for (final int r : SelectionHelpers.sortedRows(rows)) {
+                if (r >= 0 && r < this.table.getRowCount()) {
+                    this.table.addRowSelectionInterval(r, r);
+                }
+            }
+        } else {
+            this.iconList.clearSelection();
+            for (final int r : SelectionHelpers.sortedRows(rows)) {
+                if (r >= 0 && r < this.listModel.size()) {
+                    this.iconList.addSelectionInterval(r, r);
+                }
+            }
+        }
+        updateSelectionStatus();
     }
 
     /**
@@ -347,6 +615,7 @@ public final class FilePanel extends JPanel {
         // Update path immediately so ops (F5/F6/…) resolve against the new location even while listing.
         this.addressBar.setLocationDisplay(this.locationModel);
         this.updateUpButton();
+        this.navigationListener.accept(this.locationModel);
         this.refreshAsync();
     }
 
@@ -376,6 +645,9 @@ public final class FilePanel extends JPanel {
                 if (target.isZip()) {
                     return ZipArchiveFs.list(target.path(), target.zipInternalPath());
                 }
+                if (FilePanel.this.flatView) {
+                    return FlatListing.list(target.path(), FilePanel.this.showHidden);
+                }
                 return DirectoryListing.list(target.path(), FilePanel.this.showHidden);
             }
 
@@ -390,11 +662,12 @@ public final class FilePanel extends JPanel {
                         return;
                     }
                     FilePanel.this.tableModel.setEntries(entries);
+                    FilePanel.this.syncListFromTableModel();
                     FilePanel.this.applyColumnWidths();
                     FilePanel.this.refreshHeaderLabels();
                     FilePanel.this.updateUpButton();
                     if (FilePanel.this.tableModel.getRowCount() > 0) {
-                        FilePanel.this.table.getSelectionModel().setSelectionInterval(0, 0);
+                        FilePanel.this.applyRowSelection(Set.of(0));
                     }
                     FilePanel.this.updateSelectionStatus();
                 } catch (final Exception ex) {
@@ -405,6 +678,7 @@ public final class FilePanel extends JPanel {
                     log.warn("Listing failed for {}: {}", target, cause.toString());
                     FilePanel.this.statusListener.accept("Error: " + cause.getMessage());
                     FilePanel.this.tableModel.setEntries(List.of(FileEntry.upLink()));
+                    FilePanel.this.syncListFromTableModel();
                     FilePanel.this.refreshHeaderLabels();
                     FilePanel.this.updateUpButton();
                 }
@@ -457,9 +731,8 @@ public final class FilePanel extends JPanel {
     }
 
     public List<FileEntry> getSelectedEntries(final boolean includeParentLink) {
-        final int[] rows = this.table.getSelectedRows();
         final List<FileEntry> selected = new ArrayList<>();
-        for (final int row : rows) {
+        for (final int row : currentSelectedRows()) {
             final FileEntry entry = this.tableModel.getEntry(row);
             if (entry == null) {
                 continue;
@@ -473,11 +746,34 @@ public final class FilePanel extends JPanel {
     }
 
     public FileEntry getLeadEntry() {
-        int row = this.table.getSelectionModel().getLeadSelectionIndex();
-        if (row < 0) {
-            row = this.table.getSelectedRow();
+        int row;
+        if (this.viewMode == ViewMode.DETAILS) {
+            row = this.table.getSelectionModel().getLeadSelectionIndex();
+            if (row < 0) {
+                row = this.table.getSelectedRow();
+            }
+        } else {
+            row = this.iconList.getLeadSelectionIndex();
+            if (row < 0) {
+                row = this.iconList.getSelectedIndex();
+            }
         }
         return this.tableModel.getEntry(row);
+    }
+
+    public Path resolveDiskEntry(final FileEntry entry) {
+        if (!this.locationModel.isDisk() || entry == null || entry.parentLink()) {
+            throw new IllegalStateException("Not a disk child entry");
+        }
+        if (this.flatView) {
+            return FlatListing.resolveRelative(this.locationModel.path(), entry.name());
+        }
+        // For non-flat, only first path segment is used under current dir
+        final String name = entry.name();
+        if (name.contains("/") || name.contains("\\")) {
+            return FlatListing.resolveRelative(this.locationModel.path(), name);
+        }
+        return this.locationModel.resolveDiskChild(name);
     }
 
     public List<Path> getSelectedDiskPaths() {
@@ -486,7 +782,7 @@ public final class FilePanel extends JPanel {
         }
         final List<Path> paths = new ArrayList<>();
         for (final FileEntry entry : getSelectedEntries(false)) {
-            paths.add(this.locationModel.resolveDiskChild(entry.name()));
+            paths.add(resolveDiskEntry(entry));
         }
         return paths;
     }
@@ -517,19 +813,22 @@ public final class FilePanel extends JPanel {
     }
 
     private void toggleSelectionAtLead() {
-        final int viewRow = this.table.getSelectionModel().getLeadSelectionIndex();
-        if (viewRow < 0) {
-            return;
-        }
-        if (this.table.isRowSelected(viewRow)) {
-            this.table.removeRowSelectionInterval(viewRow, viewRow);
+        if (this.viewMode == ViewMode.DETAILS) {
+            final int next = InsertSelection.toggleAndAdvanceLead(
+                    this.table.getSelectionModel(),
+                    this.table.getRowCount()
+            );
+            if (next >= 0) {
+                this.table.scrollRectToVisible(this.table.getCellRect(next, 0, true));
+            }
         } else {
-            this.table.addRowSelectionInterval(viewRow, viewRow);
-        }
-        final int next = Math.min(viewRow + 1, this.table.getRowCount() - 1);
-        if (next != viewRow) {
-            this.table.getSelectionModel().setLeadSelectionIndex(next);
-            this.table.scrollRectToVisible(this.table.getCellRect(next, 0, true));
+            final int next = InsertSelection.toggleAndAdvanceLead(
+                    this.iconList.getSelectionModel(),
+                    this.listModel.size()
+            );
+            if (next >= 0) {
+                this.iconList.ensureIndexIsVisible(next);
+            }
         }
         this.updateSelectionStatus();
     }
@@ -555,7 +854,7 @@ public final class FilePanel extends JPanel {
             return;
         }
         if (this.locationModel.isDisk()) {
-            final Path child = this.locationModel.resolveDiskChild(entry.name());
+            final Path child = resolveDiskEntry(entry);
             if (entry.directory()) {
                 this.navigateTo(BrowseLocation.disk(child));
             } else if (DirectoryListing.looksLikeZip(child)) {
@@ -576,6 +875,42 @@ public final class FilePanel extends JPanel {
         }
     }
 
+    public void openExternallyLead() throws IOException {
+        final FileEntry entry = getLeadEntry();
+        if (entry == null || entry.parentLink()) {
+            return;
+        }
+        if (!this.locationModel.isDisk()) {
+            openCurrent();
+            return;
+        }
+        openExternally(resolveDiskEntry(entry));
+    }
+
+    public void openWithDesktopEdit() throws IOException {
+        final FileEntry entry = getLeadEntry();
+        if (entry == null || entry.parentLink() || entry.directory()) {
+            throw new IOException("Select a file to edit");
+        }
+        if (!this.locationModel.isDisk()) {
+            throw new IOException("Edit inside archives is not supported");
+        }
+        final Path file = resolveDiskEntry(entry);
+        if (!java.awt.Desktop.isDesktopSupported()) {
+            throw new IOException("Desktop not supported");
+        }
+        final java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+        if (desktop.isSupported(java.awt.Desktop.Action.EDIT)) {
+            desktop.edit(file.toFile());
+            return;
+        }
+        if (desktop.isSupported(java.awt.Desktop.Action.OPEN)) {
+            desktop.open(file.toFile());
+            return;
+        }
+        throw new IOException("No system viewer/editor available");
+    }
+
     private static void openExternally(final Path file) throws IOException {
         if (!java.awt.Desktop.isDesktopSupported()) {
             throw new IOException("Desktop open not supported");
@@ -585,6 +920,47 @@ public final class FilePanel extends JPanel {
             throw new IOException("Open action not supported");
         }
         desktop.open(file.toFile());
+    }
+
+    private final class IconListRenderer extends DefaultListCellRenderer {
+        @Override
+        public Component getListCellRendererComponent(
+                final JList<?> list,
+                final Object value,
+                final int index,
+                final boolean isSelected,
+                final boolean cellHasFocus
+        ) {
+            final JLabel label = (JLabel) super.getListCellRendererComponent(
+                    list, value, index, isSelected, cellHasFocus
+            );
+            if (value instanceof FileEntry entry) {
+                final String text = entry.parentLink() ? ".." : entry.name();
+                label.setText(text);
+                final FileManagerIcons.ListKind kind;
+                if (entry.parentLink()) {
+                    kind = FileManagerIcons.ListKind.UP;
+                } else if (entry.directory()) {
+                    kind = FileManagerIcons.ListKind.FOLDER;
+                } else if (entry.isZipName()) {
+                    kind = FileManagerIcons.ListKind.ZIP;
+                } else {
+                    kind = FileManagerIcons.ListKind.FILE;
+                }
+                label.setIcon(FileManagerIcons.forView(FilePanel.this.viewMode, kind));
+                if (FilePanel.this.viewMode == ViewMode.LARGE_ICONS) {
+                    // Classic large-icon layout: glyph on top, name under it
+                    label.setHorizontalTextPosition(SwingConstants.CENTER);
+                    label.setVerticalTextPosition(SwingConstants.BOTTOM);
+                    label.setHorizontalAlignment(SwingConstants.CENTER);
+                } else {
+                    label.setHorizontalTextPosition(SwingConstants.RIGHT);
+                    label.setVerticalTextPosition(SwingConstants.CENTER);
+                    label.setHorizontalAlignment(SwingConstants.LEFT);
+                }
+            }
+            return label;
+        }
     }
 
     private static final class NameCellRenderer extends DefaultTableCellRenderer {

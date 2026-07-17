@@ -1,6 +1,7 @@
 package com.sysbot32.whistler.file_manager;
 
 import lombok.Getter;
+import lombok.NonNull;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -68,9 +69,9 @@ public final class PathAddressBar extends JPanel {
     private Runnable commitListener = () -> {
     };
 
-    public PathAddressBar(final BrowseLocation initial) {
+    public PathAddressBar(@NonNull final BrowseLocation initial) {
         super(new BorderLayout());
-        this.location = Objects.requireNonNull(initial, "initial");
+        this.location = initial;
         this.setOpaque(false);
 
         this.fieldChrome.setBackground(BG);

@@ -24,16 +24,23 @@ public final class FileTableModel extends AbstractTableModel {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
 
     private final List<FileEntry> entries = new ArrayList<>();
+    /** Snapshot of last load order for View → Unsorted. */
+    private final List<FileEntry> loadOrder = new ArrayList<>();
     @Getter
     private int sortColumn = EntryComparators.COL_NAME;
     @Getter
     private boolean sortAscending = true;
+    /** When false, listing order is left as loaded (7zFM Unsorted). */
+    @Getter
+    private boolean sorted = true;
 
     public void setEntries(final List<FileEntry> next) {
         this.entries.clear();
         if (next != null) {
             this.entries.addAll(next);
         }
+        this.loadOrder.clear();
+        this.loadOrder.addAll(this.entries);
         reapplySort();
         fireTableDataChanged();
     }
@@ -45,6 +52,7 @@ public final class FileTableModel extends AbstractTableModel {
         if (column < 0 || column >= COLUMNS.length) {
             return;
         }
+        this.sorted = true;
         if (this.sortColumn == column) {
             this.sortAscending = !this.sortAscending;
         } else {
@@ -55,8 +63,32 @@ public final class FileTableModel extends AbstractTableModel {
         fireTableDataChanged();
     }
 
+    public void sortBy(final int column, final boolean ascending) {
+        if (column < 0 || column >= COLUMNS.length) {
+            return;
+        }
+        this.sorted = true;
+        this.sortColumn = column;
+        this.sortAscending = ascending;
+        reapplySort();
+        fireTableDataChanged();
+    }
+
+    /**
+     * Restore the order from the last {@link #setEntries} (listing load order), not the
+     * currently sorted rows — 7zFM Unsorted after a column sort must visibly re-order.
+     */
+    public void setUnsorted() {
+        this.sorted = false;
+        this.entries.clear();
+        this.entries.addAll(this.loadOrder);
+        fireTableDataChanged();
+    }
+
     private void reapplySort() {
-        EntryComparators.sortInPlace(this.entries, this.sortColumn, this.sortAscending);
+        if (this.sorted) {
+            EntryComparators.sortInPlace(this.entries, this.sortColumn, this.sortAscending);
+        }
     }
 
     public FileEntry getEntry(final int row) {
@@ -64,6 +96,10 @@ public final class FileTableModel extends AbstractTableModel {
             return null;
         }
         return this.entries.get(row);
+    }
+
+    public List<FileEntry> getEntries() {
+        return List.copyOf(this.entries);
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.file_manager;
 
+import lombok.experimental.UtilityClass;
+
 import javax.swing.ImageIcon;
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -15,9 +17,14 @@ import java.util.Map;
 /**
  * Classic 7zFM-style glyphs drawn with Graphics2D (no bitmap sprites).
  */
+@UtilityClass
 public final class FileManagerIcons {
     public static final int TOOL_SIZE = 20;
     public static final int LIST_SIZE = 16;
+    /** 7zFM Small Icons roughly mid-size. */
+    public static final int SMALL_ICON_SIZE = 24;
+    /** 7zFM Large Icons — visibly larger glyphs, not just wider cells. */
+    public static final int LARGE_ICON_SIZE = 32;
     /** Compact ↑ for the path-bar Up control. */
     private static final int PATH_UP_SIZE = 12;
 
@@ -31,16 +38,31 @@ public final class FileManagerIcons {
 
     private static final Map<Tool, ImageIcon> TOOL_CACHE = new EnumMap<>(Tool.class);
     private static final Map<ListKind, ImageIcon> LIST_CACHE = new EnumMap<>(ListKind.class);
-
-    private FileManagerIcons() {
-    }
-
+    private static final Map<ListKind, ImageIcon> SMALL_CACHE = new EnumMap<>(ListKind.class);
+    private static final Map<ListKind, ImageIcon> LARGE_CACHE = new EnumMap<>(ListKind.class);
     public static ImageIcon tool(final Tool tool) {
         return TOOL_CACHE.computeIfAbsent(tool, FileManagerIcons::createTool);
     }
 
     public static ImageIcon list(final ListKind kind) {
         return LIST_CACHE.computeIfAbsent(kind, k -> createList(k, LIST_SIZE));
+    }
+
+    public static ImageIcon smallIcon(final ListKind kind) {
+        return SMALL_CACHE.computeIfAbsent(kind, k -> createList(k, SMALL_ICON_SIZE));
+    }
+
+    public static ImageIcon largeIcon(final ListKind kind) {
+        return LARGE_CACHE.computeIfAbsent(kind, k -> createList(k, LARGE_ICON_SIZE));
+    }
+
+    /** Icon set for the current view mode. */
+    public static ImageIcon forView(final ViewMode mode, final ListKind kind) {
+        return switch (mode) {
+            case LARGE_ICONS -> largeIcon(kind);
+            case SMALL_ICONS -> smallIcon(kind);
+            case LIST, DETAILS -> list(kind);
+        };
     }
 
     /** Small ▼ for the address-bar combo button (icon-only — no Unicode that truncates to “…”) */

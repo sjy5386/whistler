@@ -1,15 +1,15 @@
 package com.sysbot32.whistler.file_manager;
 
+import lombok.experimental.UtilityClass;
+
 import java.nio.file.Path;
 import java.util.Optional;
 
 /**
  * Pure dest-path rules for copy/move/extract/add (7zFM-style other-panel default).
  */
+@UtilityClass
 public final class TransferTargets {
-    private TransferTargets() {
-    }
-
     /**
      * When dual panels are on and the inactive side is a disk folder, that path is the default target.
      */

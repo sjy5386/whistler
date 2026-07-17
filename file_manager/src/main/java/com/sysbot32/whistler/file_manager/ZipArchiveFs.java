@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.file_manager;
 
+import lombok.experimental.UtilityClass;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -10,6 +12,7 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,15 +25,12 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 /**
- * ZIP as a virtual folder: list, navigate, extract, create.
- * Blocks zip-slip on extract.
+ * ZIP as a virtual folder: list, navigate, extract, create, and in-archive mutations.
+ * Blocks zip-slip on extract. Mutations rewrite via a temp file then replace.
  */
+@UtilityClass
 public final class ZipArchiveFs {
     private static final int BUFFER_SIZE = 64 * 1024;
-
-    private ZipArchiveFs() {
-    }
-
     public static List<FileEntry> list(final Path zipFile, final String internalDir) throws IOException {
         final String prefix = normalizeDirPrefix(internalDir);
         final Map<String, FileEntry> children = new LinkedHashMap<>();
@@ -53,14 +53,11 @@ public final class ZipArchiveFs {
 
                 final int slash = remainder.indexOf('/');
                 if (slash < 0) {
-                    // file in this directory
                     children.putIfAbsent(remainder, toFileEntry(remainder, entry, false));
                 } else if (slash == remainder.length() - 1) {
-                    // explicit directory entry "foo/"
                     final String dirName = remainder.substring(0, slash);
                     children.putIfAbsent(dirName, toFileEntry(dirName, entry, true));
                 } else {
-                    // nested: "foo/bar" → child folder "foo"
                     final String dirName = remainder.substring(0, slash);
                     children.putIfAbsent(dirName, directoryPlaceholder(dirName, entry));
                 }
@@ -116,6 +113,16 @@ public final class ZipArchiveFs {
             final Path destDir,
             final boolean extractAll
     ) throws IOException {
+        return extract(zipFile, internalPaths, destDir, extractAll, null);
+    }
+
+    public static int extract(
+            final Path zipFile,
+            final List<String> internalPaths,
+            final Path destDir,
+            final boolean extractAll,
+            final TransferControl control
+    ) throws IOException {
         Objects.requireNonNull(zipFile, "zipFile");
         Objects.requireNonNull(destDir, "destDir");
         Files.createDirectories(destDir);
@@ -135,9 +142,31 @@ public final class ZipArchiveFs {
         }
 
         int count = 0;
+        int planned = 0;
         try (final ZipFile zip = new ZipFile(zipFile.toFile())) {
-            final var entries = zip.entries();
+            final Enumeration<? extends ZipEntry> scan = zip.entries();
+            while (scan.hasMoreElements()) {
+                final ZipEntry entry = scan.nextElement();
+                final String name = normalizeEntryName(entry.getName());
+                if (name.isEmpty()) {
+                    continue;
+                }
+                if (!extractAll && !matchesSelection(name, wanted)) {
+                    continue;
+                }
+                if (!entry.isDirectory() && !name.endsWith("/")) {
+                    planned++;
+                }
+            }
+            if (control != null) {
+                control.begin(planned);
+            }
+
+            final Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
+                if (control != null) {
+                    control.throwIfCancelled();
+                }
                 final ZipEntry entry = entries.nextElement();
                 final String name = normalizeEntryName(entry.getName());
                 if (name.isEmpty()) {
@@ -161,6 +190,9 @@ public final class ZipArchiveFs {
                         Files.setLastModifiedTime(target, entry.getLastModifiedTime());
                     }
                     count++;
+                    if (control != null) {
+                        control.advance("Extracted " + name);
+                    }
                 }
             }
         }
@@ -176,7 +208,6 @@ public final class ZipArchiveFs {
             if (entryName.startsWith(dirPrefix) || (w.endsWith("/") && entryName.equals(w.substring(0, w.length() - 1)))) {
                 return true;
             }
-            // selected directory without trailing slash
             if (!w.endsWith("/") && entryName.startsWith(w + "/")) {
                 return true;
             }
@@ -188,6 +219,14 @@ public final class ZipArchiveFs {
      * Create a new zip archive containing the given files/directories.
      */
     public static void createZip(final Path zipFile, final List<Path> sources) throws IOException {
+        createZip(zipFile, sources, null);
+    }
+
+    public static void createZip(
+            final Path zipFile,
+            final List<Path> sources,
+            final TransferControl control
+    ) throws IOException {
         Objects.requireNonNull(zipFile, "zipFile");
         Objects.requireNonNull(sources, "sources");
         if (sources.isEmpty()) {
@@ -197,26 +236,283 @@ public final class ZipArchiveFs {
         if (parent != null) {
             Files.createDirectories(parent);
         }
+        if (control != null) {
+            control.begin(sources.size());
+        }
 
         try (final OutputStream fileOut = Files.newOutputStream(zipFile);
              final ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
             for (final Path source : sources) {
+                if (control != null) {
+                    control.throwIfCancelled();
+                }
                 final Path abs = source.toAbsolutePath().normalize();
                 if (!Files.exists(abs)) {
                     throw new IOException("Missing: " + abs);
                 }
                 final String baseName = abs.getFileName() != null ? abs.getFileName().toString() : "item";
                 if (Files.isDirectory(abs)) {
-                    addDirectory(zipOut, abs, baseName);
+                    addDirectory(zipOut, abs, baseName, control);
                 } else {
                     addFile(zipOut, abs, baseName);
+                }
+                if (control != null) {
+                    control.advance("Added " + baseName);
                 }
             }
         }
     }
 
-    private static void addDirectory(final ZipOutputStream zipOut, final Path dir, final String entryPrefix)
+    /**
+     * Delete selected internal paths (files or directory trees) from the archive.
+     */
+    public static int deleteEntries(final Path zipFile, final List<String> internalPaths) throws IOException {
+        return deleteEntries(zipFile, internalPaths, null);
+    }
+
+    public static int deleteEntries(
+            final Path zipFile,
+            final List<String> internalPaths,
+            final TransferControl control
+    ) throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        final Set<String> wanted = toWantedSet(internalPaths);
+        if (wanted.isEmpty()) {
+            return 0;
+        }
+        if (control != null) {
+            control.begin(1);
+            control.setDetail("Deleting from archive…");
+        }
+        final int[] removed = {0};
+        rewriteZip(zipFile, (name, entry, zip) -> {
+            if (matchesSelection(name, wanted)) {
+                removed[0]++;
+                return RewriteAction.ofDrop();
+            }
+            return RewriteAction.ofKeep(name);
+        }, null, control);
+        if (control != null) {
+            control.advance("Deleted " + removed[0] + " entr(y/ies)");
+        }
+        return removed[0];
+    }
+
+    /**
+     * Rename a single entry (file or folder leaf) inside the archive.
+     * {@code fromInternal} is the full internal path; {@code newLeafName} has no slashes.
+     */
+    public static void renameEntry(
+            final Path zipFile,
+            final String fromInternal,
+            final String newLeafName
+    ) throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        Objects.requireNonNull(fromInternal, "fromInternal");
+        Objects.requireNonNull(newLeafName, "newLeafName");
+        if (newLeafName.isBlank() || newLeafName.contains("/") || newLeafName.contains("\\")
+                || "..".equals(newLeafName)) {
+            throw new IOException("Invalid name: " + newLeafName);
+        }
+        final String from = normalizeEntryName(fromInternal);
+        if (from.isEmpty()) {
+            throw new IOException("Empty archive path");
+        }
+        final boolean wasDir = from.endsWith("/") || fromInternal.endsWith("/");
+        final String fromKey = wasDir && !from.endsWith("/") ? from + "/" : from;
+        final String fromNoSlash = fromKey.endsWith("/") ? fromKey.substring(0, fromKey.length() - 1) : fromKey;
+
+        final int slash = fromNoSlash.lastIndexOf('/');
+        final String parent = slash < 0 ? "" : fromNoSlash.substring(0, slash + 1);
+        final String toNoSlash = parent + newLeafName;
+        final String toDir = toNoSlash + "/";
+
+        final boolean[] found = {false};
+        rewriteZip(zipFile, (name, entry, zip) -> {
+            if (name.equals(fromNoSlash) || name.equals(fromKey)
+                    || (wasDir && name.startsWith(fromKey.endsWith("/") ? fromKey : fromKey + "/"))
+                    || (!wasDir && name.startsWith(fromNoSlash + "/"))) {
+                found[0] = true;
+                String mapped;
+                if (name.equals(fromNoSlash) || name.equals(fromKey)) {
+                    mapped = (entry.isDirectory() || name.endsWith("/")) ? toDir : toNoSlash;
+                } else {
+                    final String prefix = fromKey.endsWith("/") ? fromKey : fromNoSlash + "/";
+                    final String rest = name.startsWith(prefix) ? name.substring(prefix.length()) : name;
+                    mapped = toDir + rest;
+                }
+                return RewriteAction.ofKeep(mapped);
+            }
+            return RewriteAction.ofKeep(name);
+        }, null, null);
+        if (!found[0]) {
+            throw new IOException("Entry not found: " + fromInternal);
+        }
+    }
+
+    /**
+     * Create an empty directory entry under {@code parentInternalDir}.
+     */
+    public static void mkdir(final Path zipFile, final String parentInternalDir, final String folderName)
             throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        Objects.requireNonNull(folderName, "folderName");
+        if (folderName.isBlank() || folderName.contains("/") || folderName.contains("\\")
+                || "..".equals(folderName)) {
+            throw new IOException("Invalid folder name: " + folderName);
+        }
+        final String parent = normalizeDirPrefix(parentInternalDir);
+        final String dirEntry = parent + folderName + "/";
+
+        // Fail if something already occupies that name
+        try (final ZipFile zip = new ZipFile(zipFile.toFile())) {
+            final Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                final String name = normalizeEntryName(entries.nextElement().getName());
+                if (name.equals(dirEntry) || name.equals(parent + folderName)
+                        || name.startsWith(dirEntry)) {
+                    throw new IOException("Already exists: " + folderName);
+                }
+            }
+        }
+
+        rewriteZip(zipFile, (name, entry, zip) -> RewriteAction.ofKeep(name), zos -> {
+            final ZipEntry dirZip = new ZipEntry(dirEntry);
+            dirZip.setLastModifiedTime(FileTime.from(Instant.now()));
+            zos.putNextEntry(dirZip);
+            zos.closeEntry();
+        }, null);
+    }
+
+    /**
+     * Copy selected zip entries out to a disk directory (same as partial extract).
+     * When {@code move} is true, also delete them from the archive.
+     */
+    public static int copyOrMoveToDisk(
+            final Path zipFile,
+            final List<String> internalPaths,
+            final Path destDir,
+            final boolean move,
+            final TransferControl control
+    ) throws IOException {
+        final int count = extract(zipFile, internalPaths, destDir, false, control);
+        if (move && !internalPaths.isEmpty()) {
+            deleteEntries(zipFile, internalPaths, control);
+        }
+        return count;
+    }
+
+    private static Set<String> toWantedSet(final List<String> internalPaths) {
+        final Set<String> wanted = new LinkedHashSet<>();
+        if (internalPaths == null) {
+            return wanted;
+        }
+        for (final String p : internalPaths) {
+            final String n = normalizeEntryName(p);
+            if (!n.isEmpty()) {
+                wanted.add(n);
+            }
+        }
+        return wanted;
+    }
+
+    @FunctionalInterface
+    private interface EntryMapper {
+        RewriteAction map(String normalizedName, ZipEntry entry, ZipFile zip) throws IOException;
+    }
+
+    @FunctionalInterface
+    private interface EntryAppender {
+        void append(ZipOutputStream zos) throws IOException;
+    }
+
+    private record RewriteAction(boolean shouldDrop, String newName) {
+        static RewriteAction ofDrop() {
+            return new RewriteAction(true, null);
+        }
+
+        static RewriteAction ofKeep(final String name) {
+            return new RewriteAction(false, name);
+        }
+    }
+
+    private static void rewriteZip(
+            final Path zipFile,
+            final EntryMapper mapper,
+            final EntryAppender appender,
+            final TransferControl control
+    ) throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        final Path parent = zipFile.getParent();
+        final Path temp = parent == null
+                ? Files.createTempFile("zipmut-", ".zip")
+                : Files.createTempFile(parent, "zipmut-", ".zip");
+        try {
+            try (final ZipFile zip = new ZipFile(zipFile.toFile());
+                 final OutputStream fileOut = Files.newOutputStream(temp);
+                 final ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
+                final Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    if (control != null) {
+                        control.throwIfCancelled();
+                    }
+                    final ZipEntry entry = entries.nextElement();
+                    final String name = normalizeEntryName(entry.getName());
+                    if (name.isEmpty()) {
+                        continue;
+                    }
+                    final RewriteAction action = mapper.map(name, entry, zip);
+                    if (action.shouldDrop()) {
+                        continue;
+                    }
+                    String outName = action.newName() == null ? name : normalizeEntryName(action.newName());
+                    if (outName.isEmpty()) {
+                        continue;
+                    }
+                    final boolean dir = entry.isDirectory() || name.endsWith("/") || outName.endsWith("/");
+                    if (dir && !outName.endsWith("/")) {
+                        outName = outName + "/";
+                    }
+                    final ZipEntry outEntry = new ZipEntry(outName);
+                    if (entry.getLastModifiedTime() != null) {
+                        outEntry.setLastModifiedTime(entry.getLastModifiedTime());
+                    }
+                    zipOut.putNextEntry(outEntry);
+                    if (!dir) {
+                        try (final InputStream in = zip.getInputStream(entry)) {
+                            in.transferTo(zipOut);
+                        }
+                    }
+                    zipOut.closeEntry();
+                }
+                if (appender != null) {
+                    appender.append(zipOut);
+                }
+            }
+            try {
+                Files.move(temp, zipFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (final IOException atomicFailed) {
+                Files.move(temp, zipFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (final Exception ex) {
+            try {
+                Files.deleteIfExists(temp);
+            } catch (final IOException ignored) {
+                // best-effort cleanup
+            }
+            if (ex instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException(ex);
+        }
+    }
+
+    private static void addDirectory(
+            final ZipOutputStream zipOut,
+            final Path dir,
+            final String entryPrefix,
+            final TransferControl control
+    ) throws IOException {
         final String dirEntry = entryPrefix.endsWith("/") ? entryPrefix : entryPrefix + "/";
         final ZipEntry dirZip = new ZipEntry(dirEntry);
         dirZip.setLastModifiedTime(FileTime.from(Files.getLastModifiedTime(dir).toInstant()));
@@ -225,9 +521,12 @@ public final class ZipArchiveFs {
 
         try (final var stream = Files.list(dir)) {
             for (final Path child : stream.sorted().toList()) {
+                if (control != null) {
+                    control.throwIfCancelled();
+                }
                 final String childName = dirEntry + child.getFileName().toString();
                 if (Files.isDirectory(child)) {
-                    addDirectory(zipOut, child, childName);
+                    addDirectory(zipOut, child, childName, control);
                 } else {
                     addFile(zipOut, child, childName);
                 }
@@ -244,6 +543,73 @@ public final class ZipArchiveFs {
             in.transferTo(zipOut);
         }
         zipOut.closeEntry();
+    }
+
+    /** Read archive-level comment (may be empty). */
+    public static String getComment(final Path zipFile) throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        try (final ZipFile zip = new ZipFile(zipFile.toFile())) {
+            final String c = zip.getComment();
+            return c == null ? "" : c;
+        }
+    }
+
+    /**
+     * Set archive-level comment by rewriting the zip (preserves entries).
+     */
+    public static void setComment(final Path zipFile, final String comment) throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        final String text = comment == null ? "" : comment;
+        final Path parent = zipFile.getParent();
+        final Path temp = parent == null
+                ? Files.createTempFile("zipcmt-", ".zip")
+                : Files.createTempFile(parent, "zipcmt-", ".zip");
+        try {
+            try (final ZipFile zip = new ZipFile(zipFile.toFile());
+                 final OutputStream fileOut = Files.newOutputStream(temp);
+                 final ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
+                zipOut.setComment(text);
+                final Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    final ZipEntry entry = entries.nextElement();
+                    final String name = normalizeEntryName(entry.getName());
+                    if (name.isEmpty()) {
+                        continue;
+                    }
+                    final boolean dir = entry.isDirectory() || name.endsWith("/");
+                    String outName = name;
+                    if (dir && !outName.endsWith("/")) {
+                        outName = outName + "/";
+                    }
+                    final ZipEntry outEntry = new ZipEntry(outName);
+                    if (entry.getLastModifiedTime() != null) {
+                        outEntry.setLastModifiedTime(entry.getLastModifiedTime());
+                    }
+                    zipOut.putNextEntry(outEntry);
+                    if (!dir) {
+                        try (final InputStream in = zip.getInputStream(entry)) {
+                            in.transferTo(zipOut);
+                        }
+                    }
+                    zipOut.closeEntry();
+                }
+            }
+            try {
+                Files.move(temp, zipFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (final IOException atomicFailed) {
+                Files.move(temp, zipFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (final Exception ex) {
+            try {
+                Files.deleteIfExists(temp);
+            } catch (final IOException ignored) {
+                // best-effort
+            }
+            if (ex instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException(ex);
+        }
     }
 
     /**
@@ -278,7 +644,6 @@ public final class ZipArchiveFs {
             throw new IOException("Empty archive entry name");
         }
         if (normalized.contains("..")) {
-            // reject any .. segment
             final String[] parts = normalized.split("/");
             for (final String part : parts) {
                 if ("..".equals(part)) {
@@ -308,7 +673,6 @@ public final class ZipArchiveFs {
         while (s.startsWith("/")) {
             s = s.substring(1);
         }
-        // strip trailing slash for comparison helpers; keep for directory detection at call sites
         return s;
     }
 
@@ -322,5 +686,4 @@ public final class ZipArchiveFs {
         }
         return s;
     }
-
 }

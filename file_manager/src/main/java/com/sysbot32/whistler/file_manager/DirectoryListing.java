@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.file_manager;
 
+import lombok.experimental.UtilityClass;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,10 +20,8 @@ import java.util.stream.Stream;
 /**
  * Lists a disk directory for the file table.
  */
+@UtilityClass
 public final class DirectoryListing {
-    private DirectoryListing() {
-    }
-
     public static List<FileEntry> list(final Path directory, final boolean showHidden) throws IOException {
         final Path dir = directory.toAbsolutePath().normalize();
         if (!Files.isDirectory(dir)) {

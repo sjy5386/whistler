@@ -43,4 +43,12 @@ class FileOperationsTest {
         FileOperations.delete(List.of(moveDest.resolve("src")));
         assertFalse(Files.exists(moveDest.resolve("src")));
     }
+
+    @Test
+    void createEmptyFile() throws Exception {
+        final Path parent = Files.createDirectory(this.tempDir.resolve("p"));
+        final Path created = FileOperations.createFile(parent, "new.txt");
+        assertTrue(Files.isRegularFile(created));
+        assertEquals(0L, Files.size(created));
+    }
 }
