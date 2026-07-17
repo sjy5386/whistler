@@ -10,15 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Enumeration;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -219,7 +211,7 @@ public final class ZipArchiveFs {
      * Create a new zip archive containing the given files/directories.
      */
     public static void createZip(final Path zipFile, final List<Path> sources) throws IOException {
-        createZip(zipFile, sources, null);
+        createZip(zipFile, sources, null, ArchiveWriteOptions.defaults());
     }
 
     public static void createZip(
@@ -227,8 +219,18 @@ public final class ZipArchiveFs {
             final List<Path> sources,
             final TransferControl control
     ) throws IOException {
+        createZip(zipFile, sources, control, ArchiveWriteOptions.defaults());
+    }
+
+    public static void createZip(
+            final Path zipFile,
+            final List<Path> sources,
+            final TransferControl control,
+            final ArchiveWriteOptions options
+    ) throws IOException {
         Objects.requireNonNull(zipFile, "zipFile");
         Objects.requireNonNull(sources, "sources");
+        final ArchiveWriteOptions opts = options == null ? ArchiveWriteOptions.defaults() : options;
         if (sources.isEmpty()) {
             throw new IOException("Nothing to add to archive");
         }
@@ -242,6 +244,7 @@ public final class ZipArchiveFs {
 
         try (final OutputStream fileOut = Files.newOutputStream(zipFile);
              final ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
+            zipOut.setLevel(opts.compressionLevel());
             for (final Path source : sources) {
                 if (control != null) {
                     control.throwIfCancelled();
@@ -261,6 +264,136 @@ public final class ZipArchiveFs {
                 }
             }
         }
+    }
+
+    /**
+     * Add disk files/directories into an existing zip under {@code destInternalDir}
+     * (empty = archive root). Existing entries with the same paths are replaced
+     * according to {@link ArchiveWriteOptions#updateMode()}.
+     */
+    public static void addToZip(
+            final Path zipFile,
+            final String destInternalDir,
+            final List<Path> sources,
+            final TransferControl control
+    ) throws IOException {
+        addToZip(zipFile, destInternalDir, sources, control, ArchiveWriteOptions.defaults());
+    }
+
+    public static void addToZip(
+            final Path zipFile,
+            final String destInternalDir,
+            final List<Path> sources,
+            final TransferControl control,
+            final ArchiveWriteOptions options
+    ) throws IOException {
+        Objects.requireNonNull(zipFile, "zipFile");
+        Objects.requireNonNull(sources, "sources");
+        final ArchiveWriteOptions opts = options == null ? ArchiveWriteOptions.defaults() : options;
+        if (!Files.isRegularFile(zipFile)) {
+            throw new IOException("Not an existing zip: " + zipFile);
+        }
+        if (sources.isEmpty()) {
+            throw new IOException("Nothing to add to archive");
+        }
+        final String destPrefix = normalizeDirPrefix(destInternalDir);
+
+        // Existing entry mtimes for update-mode decisions (file paths, no trailing slash)
+        final Map<String, Long> existingMtimes = new LinkedHashMap<>();
+        try (final ZipFile zip = new ZipFile(zipFile.toFile())) {
+            final Enumeration<? extends ZipEntry> en = zip.entries();
+            while (en.hasMoreElements()) {
+                final ZipEntry e = en.nextElement();
+                final String n = normalizeEntryName(e.getName());
+                if (n.isEmpty() || n.endsWith("/")) {
+                    continue;
+                }
+                long ms = 0L;
+                if (e.getLastModifiedTime() != null) {
+                    ms = e.getLastModifiedTime().toMillis();
+                }
+                existingMtimes.put(n, ms);
+            }
+        }
+
+        final List<Path> toWrite = new ArrayList<>();
+        final Set<String> dropRoots = new LinkedHashSet<>();
+        for (final Path source : sources) {
+            final Path abs = source.toAbsolutePath().normalize();
+            if (!Files.exists(abs)) {
+                throw new IOException("Missing: " + abs);
+            }
+            final String baseName = abs.getFileName() != null ? abs.getFileName().toString() : "item";
+            final String rootFile = destPrefix + baseName;
+            final String rootDir = rootFile.endsWith("/") ? rootFile : rootFile + "/";
+            final boolean existsInZip = existingMtimes.containsKey(rootFile)
+                    || existingMtimes.keySet().stream().anyMatch(k -> k.startsWith(rootDir));
+
+            switch (opts.updateMode()) {
+                case FRESHEN -> {
+                    if (!existsInZip) {
+                        continue;
+                    }
+                }
+                case UPDATE_AND_ADD -> {
+                    if (existsInZip && Files.isRegularFile(abs)) {
+                        final long archMs = existingMtimes.getOrDefault(rootFile, 0L);
+                        final long srcMs = Files.getLastModifiedTime(abs).toMillis();
+                        if (srcMs <= archMs) {
+                            continue; // archive is same or newer
+                        }
+                    }
+                }
+                case ADD_AND_REPLACE -> {
+                    // always write
+                }
+            }
+            toWrite.add(abs);
+            dropRoots.add(Files.isDirectory(abs) ? rootDir : rootFile);
+            dropRoots.add(rootFile.endsWith("/") ? rootFile.substring(0, rootFile.length() - 1) : rootFile);
+        }
+        if (toWrite.isEmpty()) {
+            if (control != null) {
+                control.begin(0);
+            }
+            return;
+        }
+        if (control != null) {
+            control.begin(toWrite.size());
+            control.setDetail("Updating archive…");
+        }
+        rewriteZip(
+                zipFile,
+                (name, entry, zip) -> {
+                    for (final String root : dropRoots) {
+                        if (name.equals(root)
+                                || name.startsWith(root.endsWith("/") ? root : root + "/")) {
+                            return RewriteAction.ofDrop();
+                        }
+                    }
+                    return RewriteAction.ofKeep(name);
+                },
+                zipOut -> {
+                    zipOut.setLevel(opts.compressionLevel());
+                    for (final Path abs : toWrite) {
+                        if (control != null) {
+                            control.throwIfCancelled();
+                        }
+                        final String baseName = abs.getFileName() != null
+                                ? abs.getFileName().toString() : "item";
+                        final String entryPrefix = destPrefix + baseName;
+                        if (Files.isDirectory(abs)) {
+                            addDirectory(zipOut, abs, entryPrefix, control);
+                        } else {
+                            addFile(zipOut, abs, entryPrefix);
+                        }
+                        if (control != null) {
+                            control.advance("Added " + baseName);
+                        }
+                    }
+                },
+                control
+        );
     }
 
     /**

@@ -4,53 +4,18 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
-import javax.swing.AbstractAction;
-import javax.swing.ActionMap;
-import javax.swing.BorderFactory;
-import javax.swing.DefaultListCellRenderer;
-import javax.swing.DefaultListModel;
-import javax.swing.InputMap;
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JList;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.KeyStroke;
-import javax.swing.ListSelectionModel;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
+import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
-import java.awt.BorderLayout;
-import java.awt.CardLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.Insets;
-import java.awt.Point;
-import java.awt.Rectangle;
-import java.awt.event.ActionEvent;
-import java.awt.event.FocusAdapter;
-import java.awt.event.FocusEvent;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.*;
+import java.awt.event.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -643,7 +608,7 @@ public final class FilePanel extends JPanel {
             @Override
             protected List<FileEntry> doInBackground() throws Exception {
                 if (target.isZip()) {
-                    return ZipArchiveFs.list(target.path(), target.zipInternalPath());
+                    return Archives.zip().list(target.path(), target.zipInternalPath());
                 }
                 if (FilePanel.this.flatView) {
                     return FlatListing.list(target.path(), FilePanel.this.showHidden);
@@ -869,7 +834,7 @@ public final class FilePanel extends JPanel {
         } else {
             final Path tempDir = Files.createTempDirectory("file-manager-open-");
             final String internal = this.locationModel.resolveZipChild(entry.name(), false);
-            ZipArchiveFs.extract(this.locationModel.path(), List.of(internal), tempDir, false);
+            Archives.zip().extract(this.locationModel.path(), List.of(internal), tempDir, false, null);
             final Path extracted = ZipArchiveFs.resolveSafe(tempDir.toAbsolutePath().normalize(), internal);
             openExternally(extracted);
         }

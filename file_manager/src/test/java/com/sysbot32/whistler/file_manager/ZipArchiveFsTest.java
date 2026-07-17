@@ -188,4 +188,21 @@ class ZipArchiveFsTest {
         final Path out = Files.createDirectory(this.tempDir.resolve("cancel-out"));
         assertThrows(Exception.class, () -> ZipArchiveFs.extract(zip, List.of(), out, true, control));
     }
+
+    @Test
+    void addToExistingZipWithCancelCheck() throws Exception {
+        final Path a = Files.writeString(this.tempDir.resolve("old.txt"), "old");
+        final Path zip = this.tempDir.resolve("add.zip");
+        ZipArchiveFs.createZip(zip, List.of(a));
+        final Path b = Files.writeString(this.tempDir.resolve("new.txt"), "new");
+        final TransferControl control = new TransferControl();
+        ZipArchiveFs.addToZip(zip, "", List.of(b), control);
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "new.txt".equals(e.name())));
+        assertTrue(ZipArchiveFs.list(zip, "").stream().anyMatch(e -> "old.txt".equals(e.name())));
+        assertEquals(2, ZipArchiveFs.test(zip));
+
+        control.cancel();
+        final Path c = Files.writeString(this.tempDir.resolve("c.txt"), "c");
+        assertThrows(Exception.class, () -> ZipArchiveFs.addToZip(zip, "", List.of(c), control));
+    }
 }

@@ -42,10 +42,15 @@ class FileManagerWiringTest {
                 "VK_DELETE", "VK_TAB", "VK_BACK_SPACE", "VK_ENTER", "VK_INSERT",
                 "CTRL_DOWN_MASK", "WHEN_IN_FOCUSED_WINDOW",
                 "TransferTargets", "planZipExtract", "defaultArchiveSaveDir",
-                "BrowseLocation.zip", "ZipArchiveFs.createZip", "ZipArchiveFs.extract"
+                "BrowseLocation.zip", "Archives."
         }) {
             assertTrue(src.contains(token), "missing wiring: " + token);
         }
+        assertTrue(src.contains("Archives.createOrAdd") || src.contains("Archives.zip()"),
+                "FM must call archive ops through Archives facade");
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/ArchiveOperations.java")),
+                "ArchiveOperations surface must exist");
     }
 
     @Test
@@ -105,7 +110,31 @@ class FileManagerWiringTest {
                 "Open Inside with accelerator like 7zFM");
         assertTrue(frame.contains("Copy To...\\tF5") || frame.contains("Copy To...\tF5"),
                 "Copy To... label like 7zFM");
-        assertTrue(frame.contains("Add to archive..."), "archive plugin items present");
+        assertTrue(frame.contains("Add to \"") || frame.contains("actionAddQuick"),
+                "quick Add to \"xxx.zip\" present");
+        assertTrue(frame.contains("actionAddCreateNew") || frame.contains("Add to archive"),
+                "Add to archive dialog entry present");
+        assertTrue(frame.contains("AddToArchiveDialog"),
+                "7zFM-style Add to Archive dialog wired");
+        assertTrue(frame.contains("current directory") || frame.contains("loc.path().getFileName()"),
+                "multi-select zip name uses current directory");
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/AddToArchiveDialog.java")));
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/ArchiveWriteOptions.java")));
+        final String dialog = Files.readString(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/AddToArchiveDialog.java"));
+        for (final String token : new String[]{
+                "Archive format:", "Compression level:", "Compression method:",
+                "Update mode:", "Path mode:", "Delete files after", "Help", "syncMethodEnabled"
+        }) {
+            assertTrue(dialog.contains(token), "dialog layout missing: " + token);
+        }
+        // 7z-only placeholders removed for zip-only UI
+        assertTrue(!dialog.contains("Dictionary size:"), "7z dictionary control should be gone");
+        assertTrue(!dialog.contains("Solid block"), "7z solid control should be gone");
+        assertTrue(!dialog.contains("Create SFX"), "SFX control should be gone");
+        assertTrue(!dialog.contains("Encryption"), "encryption stub panel should be gone");
         assertTrue(frame.contains("new JMenu(\"Archive\")") || frame.contains("JMenu(\"Archive\")"),
                 "archive ops under cascaded Archive submenu");
         assertTrue(frame.contains("updateWindowTitle"), "window title tracks current path");
@@ -126,11 +155,19 @@ class FileManagerWiringTest {
         assertTrue(frame.contains("ProgressTasks.run"), "cancellable progress path");
         assertTrue(frame.contains("CollisionPolicy") || frame.contains("promptCollision"),
                 "name collision chooser wired");
-        assertTrue(frame.contains("ZipArchiveFs.deleteEntries"), "zip delete wired");
-        assertTrue(frame.contains("ZipArchiveFs.renameEntry"), "zip rename wired");
-        assertTrue(frame.contains("ZipArchiveFs.mkdir"), "zip mkdir wired");
-        assertTrue(frame.contains("ZipArchiveFs.copyOrMoveToDisk"), "zip copy/move wired");
+        assertTrue(frame.contains("deleteEntries"), "zip delete wired");
+        assertTrue(frame.contains("renameEntry"), "zip rename wired");
+        assertTrue(frame.contains(".mkdir(") || frame.contains("mkdir(loc"), "zip mkdir wired");
+        assertTrue(frame.contains("copyOrMoveToDisk"), "zip copy/move wired");
+        assertTrue(frame.contains("Archives.createOrAdd") || frame.contains("createOrAdd"),
+                "add-into-existing via createOrAdd");
         assertTrue(!frame.contains("not supported in MVP"), "MVP blocks for zip mutate must be gone");
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/ArchiveOperations.java")));
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/Archives.java")));
+        assertTrue(Files.isRegularFile(Path.of(
+                "src/main/java/com/sysbot32/whistler/file_manager/ZipArchiveOperations.java")));
         assertTrue(Files.isRegularFile(Path.of(
                 "src/main/java/com/sysbot32/whistler/file_manager/CollisionPolicy.java")));
         assertTrue(Files.isRegularFile(Path.of(

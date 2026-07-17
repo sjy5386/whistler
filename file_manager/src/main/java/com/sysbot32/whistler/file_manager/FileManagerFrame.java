@@ -4,54 +4,18 @@ import com.sysbot32.whistler.config.Config;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
-import javax.swing.AbstractAction;
-import javax.swing.ActionMap;
-import javax.swing.BorderFactory;
-import javax.swing.ButtonGroup;
-import javax.swing.InputMap;
-import javax.swing.JButton;
-import javax.swing.JCheckBoxMenuItem;
-import javax.swing.JComponent;
-import javax.swing.JFileChooser;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JMenu;
-import javax.swing.JMenuBar;
-import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
-import javax.swing.JRadioButtonMenuItem;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTextArea;
-import javax.swing.JToolBar;
-import javax.swing.KeyStroke;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
-import javax.swing.WindowConstants;
+import javax.swing.*;
 import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
-import java.awt.BorderLayout;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.Insets;
-import java.awt.Toolkit;
+import java.awt.*;
 import java.awt.datatransfer.StringSelection;
-import java.awt.event.ActionEvent;
-import java.awt.event.InputEvent;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
+import java.awt.event.*;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-
 import java.util.concurrent.CancellationException;
 
 /**
@@ -202,7 +166,7 @@ public final class FileManagerFrame extends JFrame {
         final JToolBar bar = new JToolBar();
         bar.setFloatable(false);
         bar.setRollover(true);
-        bar.add(toolButton(FileManagerIcons.Tool.ADD, "Add", "Add to archive (zip)", this::actionAdd));
+        bar.add(toolButton(FileManagerIcons.Tool.ADD, "Add", "Add to archive…", this::actionAddCreateNew));
         bar.add(toolButton(FileManagerIcons.Tool.EXTRACT, "Extract", "Extract", this::actionExtract));
         bar.add(toolButton(FileManagerIcons.Tool.TEST, "Test", "Test archive", this::actionTest));
         bar.addSeparator();
@@ -799,7 +763,7 @@ public final class FileManagerFrame extends JFrame {
                     this,
                     move ? "Move" : "Copy",
                     control,
-                    () -> ZipArchiveFs.copyOrMoveToDisk(zip, internal, dest, move, control),
+                    () -> Archives.zip().copyOrMoveToDisk(zip, internal, dest, move, control),
                     count -> {
                         setStatus((move ? "Moved" : "Copied") + " " + count + " file(s) from archive");
                         refreshActive();
@@ -917,7 +881,7 @@ public final class FileManagerFrame extends JFrame {
                     this,
                     "Delete",
                     control,
-                    () -> ZipArchiveFs.deleteEntries(zip, internal, control),
+                    () -> Archives.zip().deleteEntries(zip, internal, control),
                     n -> {
                         setStatus("Deleted " + n + " entr(y/ies) from archive");
                         panel.refreshAsync();
@@ -974,7 +938,7 @@ public final class FileManagerFrame extends JFrame {
         try {
             if (loc.isZip()) {
                 final String from = loc.resolveZipChild(entry.name(), entry.directory());
-                ZipArchiveFs.renameEntry(loc.path(), from, newName.trim());
+                Archives.zip().renameEntry(loc.path(), from, newName.trim());
             } else {
                 FileOperations.rename(panel.resolveDiskEntry(entry), newName.trim());
             }
@@ -994,7 +958,7 @@ public final class FileManagerFrame extends JFrame {
         final BrowseLocation loc = panel.getLocationModel();
         try {
             if (loc.isZip()) {
-                ZipArchiveFs.mkdir(loc.path(), loc.zipInternalPath(), name.trim());
+                Archives.zip().mkdir(loc.path(), loc.zipInternalPath(), name.trim());
             } else {
                 FileOperations.mkdir(loc.path(), name.trim());
             }
@@ -1005,47 +969,110 @@ public final class FileManagerFrame extends JFrame {
         }
     }
 
-    private void actionAdd() {
-        final FilePanel panel = this.activePanel;
-        if (!panel.getLocationModel().isDisk()) {
-            JOptionPane.showMessageDialog(this, "Add only works from a disk folder.", APP_TITLE,
-                    JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        final List<Path> sources = panel.getSelectedDiskPaths();
-        if (sources.isEmpty()) {
-            setStatus("Select files or folders to compress");
+    /**
+     * 7zFM-style quick add: no dialog — create/update {@code suggestedName.zip}
+     * in the active folder (or other panel disk when dual).
+     */
+    private void actionAddQuick() {
+        final List<Path> sources = selectedDiskSourcesForAdd();
+        if (sources == null) {
             return;
         }
         final Path saveDir = TransferTargets.defaultArchiveSaveDir(
                 this.dualPanel,
-                panel.getLocationModel(),
+                this.activePanel.getLocationModel(),
                 inactivePanel().getLocationModel()
         );
-        final JFileChooser chooser = new JFileChooser(saveDir.toFile());
-        chooser.setDialogTitle("Create zip archive");
-        chooser.setSelectedFile(saveDir.resolve(suggestZipName(sources)).toFile());
-        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+        final Path target = saveDir.resolve(suggestZipName(sources));
+        runAddToArchive(sources, target, "", ArchiveWriteOptions.defaults());
+    }
+
+    /** Add into the inactive panel’s current zip (no dialog). */
+    private void actionAddToOtherPanelZip() {
+        final List<Path> sources = selectedDiskSourcesForAdd();
+        if (sources == null) {
             return;
         }
-        Path zipPath = chooser.getSelectedFile().toPath();
-        if (!zipPath.getFileName().toString().toLowerCase().endsWith(".zip")) {
-            zipPath = zipPath.resolveSibling(zipPath.getFileName().toString() + ".zip");
+        final BrowseLocation other = inactivePanel().getLocationModel();
+        if (!this.dualPanel || !other.isZip()) {
+            setStatus("Other panel is not inside a zip");
+            return;
         }
-        final Path target = zipPath;
+        runAddToArchive(sources, other.path(), other.zipInternalPath(), ArchiveWriteOptions.defaults());
+    }
+
+    /**
+     * 7zFM-style “Add to Archive…” dedicated dialog (path, level, update mode, options).
+     * Path may be new or existing — {@link Archives#createOrAdd} handles both.
+     */
+    private void actionAddCreateNew() {
+        final List<Path> sources = selectedDiskSourcesForAdd();
+        if (sources == null) {
+            return;
+        }
+        final Path saveDir = TransferTargets.defaultArchiveSaveDir(
+                this.dualPanel,
+                this.activePanel.getLocationModel(),
+                inactivePanel().getLocationModel()
+        );
+        final Path defaultArchive = saveDir.resolve(suggestZipName(sources));
+        final AddToArchiveDialog dialog = new AddToArchiveDialog(this, defaultArchive);
+        dialog.showDialog().ifPresent(result ->
+                runAddToArchive(sources, result.archive(), "", result.options())
+        );
+    }
+
+    /** Toolbar “Add” still quick; menu “Add to archive…” opens the full dialog. */
+    private void actionAdd() {
+        actionAddCreateNew();
+    }
+
+    /** @return selected disk paths, or null if invalid (status already set) */
+    private List<Path> selectedDiskSourcesForAdd() {
+        final FilePanel panel = this.activePanel;
+        if (!panel.getLocationModel().isDisk()) {
+            JOptionPane.showMessageDialog(this, "Add only works from a disk folder.", APP_TITLE,
+                    JOptionPane.INFORMATION_MESSAGE);
+            return null;
+        }
+        final List<Path> sources = panel.getSelectedDiskPaths();
+        if (sources.isEmpty()) {
+            setStatus("Select files or folders to compress");
+            return null;
+        }
+        return sources;
+    }
+
+    private void runAddToArchive(
+            final List<Path> sources,
+            final Path archive,
+            final String destInternal,
+            final ArchiveWriteOptions options
+    ) {
+        final boolean intoExisting = Files.isRegularFile(archive);
+        final ArchiveWriteOptions opts = options == null ? ArchiveWriteOptions.defaults() : options;
         final TransferControl control = new TransferControl();
-        setStatus("Creating archive…");
+        setStatus(intoExisting ? "Adding to archive…" : "Creating archive…");
         ProgressTasks.run(
                 this,
                 "Add to Archive",
                 control,
                 () -> {
-                    ZipArchiveFs.createZip(target, sources, control);
-                    return target.getFileName().toString();
+                    Archives.createOrAdd(
+                            archive,
+                            destInternal == null ? "" : destInternal,
+                            sources,
+                            control,
+                            opts
+                    );
+                    if (opts.deleteFilesAfter()) {
+                        FileOperations.delete(sources, control);
+                    }
+                    return archive.getFileName().toString();
                 },
                 name -> {
-                    setStatus("Created " + name);
-                    panel.refreshAsync();
+                    setStatus((intoExisting ? "Updated " : "Created ") + name);
+                    this.activePanel.refreshAsync();
                     if (this.dualPanel) {
                         inactivePanel().refreshAsync();
                     }
@@ -1053,6 +1080,7 @@ public final class FileManagerFrame extends JFrame {
                 ex -> handleTransferError("Add failed", ex)
         );
     }
+
 
     /**
      * Listing context menu mirrors 7-Zip FM (resource.rc File menu + archive plugin items).
@@ -1095,10 +1123,32 @@ public final class FileManagerFrame extends JFrame {
 
         final JPopupMenu popup = new JPopupMenu();
 
-        // Cascaded archive submenu (7zFM-style cascade; app is File Manager, not 7-Zip)
+        // Cascaded archive submenu (7zFM-style: quick “Add to xxx.zip” + chooser items)
         final JMenu archiveMenu = new JMenu("Archive");
         if (disk) {
-            archiveMenu.add(popupItem("Add to archive...", canAdd, this::actionAdd));
+            final List<Path> addSources = canAdd ? panel.getSelectedDiskPaths() : List.of();
+            final String suggested = canAdd && !addSources.isEmpty()
+                    ? suggestZipName(addSources)
+                    : "archive.zip";
+            // 7z shell order: "Add to archive…" then quick "Add to \"name.zip\""
+            archiveMenu.add(popupItem("Add to archive…", canAdd, this::actionAddCreateNew));
+            archiveMenu.add(popupItem(
+                    "Add to \"" + suggested + "\"",
+                    canAdd,
+                    this::actionAddQuick
+            ));
+            final BrowseLocation other = inactivePanel().getLocationModel();
+            if (this.dualPanel && other.isZip()) {
+                final String otherName = other.path().getFileName() != null
+                        ? other.path().getFileName().toString()
+                        : other.path().toString();
+                archiveMenu.add(popupItem(
+                        "Add to \"" + otherName + "\"",
+                        canAdd,
+                        this::actionAddToOtherPanelZip
+                ));
+            }
+            archiveMenu.addSeparator();
             archiveMenu.add(popupItem("Extract files...", canExtract, this::actionExtract));
             archiveMenu.add(popupItem("Test archive", canTest, this::actionTest));
         } else if (zip) {
@@ -1316,14 +1366,14 @@ public final class FileManagerFrame extends JFrame {
         final BrowseLocation loc = panel.getLocationModel();
         try {
             if (loc.isZip()) {
-                final String current = ZipArchiveFs.getComment(loc.path());
+                final String current = Archives.zip().getComment(loc.path());
                 final String next = (String) JOptionPane.showInputDialog(
                         this, "Archive comment:", "Comment",
                         JOptionPane.PLAIN_MESSAGE, null, null, current);
                 if (next == null) {
                     return;
                 }
-                ZipArchiveFs.setComment(loc.path(), next);
+                Archives.zip().setComment(loc.path(), next);
                 setStatus("Archive comment updated");
                 return;
             }
@@ -1342,14 +1392,14 @@ public final class FileManagerFrame extends JFrame {
                 return;
             }
             if (DirectoryListing.looksLikeZip(target) && Files.isRegularFile(target)) {
-                final String current = ZipArchiveFs.getComment(target);
+                final String current = Archives.zip().getComment(target);
                 final String next = (String) JOptionPane.showInputDialog(
                         this, "Archive comment:", "Comment",
                         JOptionPane.PLAIN_MESSAGE, null, null, current);
                 if (next == null) {
                     return;
                 }
-                ZipArchiveFs.setComment(target, next);
+                Archives.zip().setComment(target, next);
                 setStatus("Archive comment updated");
                 return;
             }
@@ -1624,14 +1674,34 @@ public final class FileManagerFrame extends JFrame {
         return item;
     }
 
-    private static String suggestZipName(final List<Path> sources) {
-        if (sources.size() == 1) {
-            final String name = sources.getFirst().getFileName().toString();
+    /**
+     * Suggested archive file name (7zFM-like):
+     * one item → that name; multiple → current directory name (not fixed archive.zip).
+     */
+    private String suggestZipName(final List<Path> sources) {
+        if (sources != null && sources.size() == 1) {
+            final Path one = sources.getFirst();
+            final String name = one.getFileName() != null ? one.getFileName().toString() : "item";
             final int dot = name.lastIndexOf('.');
-            if (dot > 0 && Files.isRegularFile(sources.getFirst())) {
+            if (dot > 0 && Files.isRegularFile(one)) {
                 return name.substring(0, dot) + ".zip";
             }
             return name + ".zip";
+        }
+        // Multi-select: use the folder we are browsing (active panel)
+        final BrowseLocation loc = this.activePanel != null ? this.activePanel.getLocationModel() : null;
+        if (loc != null && loc.isDisk()) {
+            final Path dirName = loc.path().getFileName();
+            if (dirName != null && !dirName.toString().isBlank()) {
+                return dirName + ".zip";
+            }
+        }
+        if (sources != null && !sources.isEmpty()) {
+            final Path parent = sources.getFirst().getParent();
+            if (parent != null && parent.getFileName() != null
+                    && !parent.getFileName().toString().isBlank()) {
+                return parent.getFileName() + ".zip";
+            }
         }
         return "archive.zip";
     }
@@ -1714,7 +1784,7 @@ public final class FileManagerFrame extends JFrame {
                 this,
                 "Extract",
                 control,
-                () -> ZipArchiveFs.extract(zip, paths, dest, all, control),
+                () -> Archives.zip().extract(zip, paths, dest, all, control),
                 count -> {
                     setStatus("Extracted " + count + " file(s)");
                     if (this.dualPanel) {
@@ -1755,7 +1825,7 @@ public final class FileManagerFrame extends JFrame {
         new SwingWorker<Integer, Void>() {
             @Override
             protected Integer doInBackground() throws Exception {
-                return ZipArchiveFs.test(zip);
+                return Archives.zip().test(zip);
             }
 
             @Override
