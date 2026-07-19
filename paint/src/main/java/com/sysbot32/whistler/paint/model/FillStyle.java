@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.model;
 
 /**
  * Shape fill style under the toolbox (classic Paint three-mode selector).

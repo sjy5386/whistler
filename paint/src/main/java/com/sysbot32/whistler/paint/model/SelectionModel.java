@@ -1,4 +1,6 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.model;
+
+import com.sysbot32.whistler.paint.image.BitmapOps;
 
 import lombok.Getter;
 

@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.model;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

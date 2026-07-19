@@ -1,4 +1,6 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.ui;
+
+import com.sysbot32.whistler.paint.model.PaintTool;
 
 import javax.swing.ImageIcon;
 import java.awt.BasicStroke;

@@ -1,4 +1,7 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.image;
+
+import com.sysbot32.whistler.paint.model.BrushShape;
+import com.sysbot32.whistler.paint.model.FillStyle;
 
 import java.awt.BasicStroke;
 import java.awt.Color;

@@ -1,6 +1,12 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.ui;
 
 import com.sysbot32.whistler.config.Config;
+import com.sysbot32.whistler.paint.image.ImagePrintSupport;
+import com.sysbot32.whistler.paint.model.BrushShape;
+import com.sysbot32.whistler.paint.model.ColorPalette;
+import com.sysbot32.whistler.paint.model.FillStyle;
+import com.sysbot32.whistler.paint.model.Paint;
+import com.sysbot32.whistler.paint.model.PaintTool;
 
 import javax.swing.*;
 import javax.swing.border.LineBorder;

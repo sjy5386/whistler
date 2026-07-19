@@ -1,5 +1,6 @@
 package com.sysbot32.whistler.paint;
 
+import com.sysbot32.whistler.paint.model.PaintTool;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -38,7 +39,7 @@ class PaintShellStructureTest {
 
     @Test
     void frameSourceDefinesClassicMenusAndColorBox() throws Exception {
-        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/PaintFrame.java");
+        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/ui/PaintFrame.java");
         final String source = Files.readString(frame);
         assertTrue(source.contains("createFileMenu"));
         assertTrue(source.contains("createEditMenu"));
@@ -60,7 +61,7 @@ class PaintShellStructureTest {
 
     @Test
     void pendingTextIsCommittedBeforeDiscardConfirmation() throws Exception {
-        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/PaintFrame.java");
+        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/ui/PaintFrame.java");
         final String source = Files.readString(frame);
         final String newDocument = source.substring(
                 source.indexOf("private void newDocument()"),
@@ -76,7 +77,7 @@ class PaintShellStructureTest {
 
     @Test
     void pendingTextIsCommittedBeforeDirectSave() throws Exception {
-        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/PaintFrame.java");
+        final Path frame = Path.of("src/main/java/com/sysbot32/whistler/paint/ui/PaintFrame.java");
         final String source = Files.readString(frame);
         final String save = source.substring(
                 source.indexOf("private void save()"),

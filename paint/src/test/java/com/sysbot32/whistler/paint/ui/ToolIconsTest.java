@@ -1,5 +1,6 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.ui;
 
+import com.sysbot32.whistler.paint.model.PaintTool;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.ImageIcon;

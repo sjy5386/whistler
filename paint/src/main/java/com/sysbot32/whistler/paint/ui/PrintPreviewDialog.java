@@ -1,4 +1,6 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.ui;
+
+import com.sysbot32.whistler.paint.image.ImagePrintSupport;
 
 import javax.swing.*;
 import java.awt.*;

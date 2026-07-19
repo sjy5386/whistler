@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.model;
 
 /**
  * Brush tip shapes offered under the Brush tool.

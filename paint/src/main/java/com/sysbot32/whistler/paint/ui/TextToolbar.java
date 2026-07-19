@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.ui;
 
 import lombok.NonNull;
 import lombok.Setter;

@@ -1,6 +1,8 @@
 package com.sysbot32.whistler.paint;
 
 import com.sysbot32.whistler.config.Config;
+import com.sysbot32.whistler.paint.model.Paint;
+import com.sysbot32.whistler.paint.ui.PaintFrame;
 import com.sysbot32.whistler.config.PropertiesConfig;
 
 import javax.swing.*;

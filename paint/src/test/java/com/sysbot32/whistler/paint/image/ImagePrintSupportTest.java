@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.paint;
+package com.sysbot32.whistler.paint.image;
 
 import org.junit.jupiter.api.Test;
 
