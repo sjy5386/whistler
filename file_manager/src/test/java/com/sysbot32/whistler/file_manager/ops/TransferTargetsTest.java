@@ -68,4 +68,23 @@ class TransferTargetsTest {
         assertFalse(plan.extractAll());
         assertEquals(2, plan.internalPaths().size());
     }
+
+    @Test
+    void archiveStemAndExtractDestinations() {
+        final Path zip = this.tempDir.resolve("MyPack.zip");
+        assertEquals("MyPack", TransferTargets.archiveStemName(zip));
+        assertEquals(this.tempDir, TransferTargets.extractHereDir(zip));
+        assertEquals(this.tempDir.resolve("MyPack"), TransferTargets.extractToNamedFolder(zip));
+
+        final Path other = this.tempDir.resolve("other");
+        final BrowseLocation inactive = BrowseLocation.disk(other);
+        assertEquals(
+                other.toAbsolutePath().normalize(),
+                TransferTargets.defaultExtractDestination(zip, true, inactive)
+        );
+        assertEquals(
+                this.tempDir.resolve("MyPack"),
+                TransferTargets.defaultExtractDestination(zip, false, inactive)
+        );
+    }
 }

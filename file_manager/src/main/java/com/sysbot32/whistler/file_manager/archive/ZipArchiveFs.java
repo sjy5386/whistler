@@ -108,7 +108,7 @@ public final class ZipArchiveFs {
             final Path destDir,
             final boolean extractAll
     ) throws IOException {
-        return extract(zipFile, internalPaths, destDir, extractAll, null);
+        return extract(zipFile, internalPaths, destDir, extractAll, null, ArchiveExtractOptions.defaults());
     }
 
     public static int extract(
@@ -118,8 +118,20 @@ public final class ZipArchiveFs {
             final boolean extractAll,
             final TransferControl control
     ) throws IOException {
+        return extract(zipFile, internalPaths, destDir, extractAll, control, ArchiveExtractOptions.defaults());
+    }
+
+    public static int extract(
+            final Path zipFile,
+            final List<String> internalPaths,
+            final Path destDir,
+            final boolean extractAll,
+            final TransferControl control,
+            final ArchiveExtractOptions options
+    ) throws IOException {
         Objects.requireNonNull(zipFile, "zipFile");
         Objects.requireNonNull(destDir, "destDir");
+        final ArchiveExtractOptions opts = options == null ? ArchiveExtractOptions.defaults() : options;
         Files.createDirectories(destDir);
         final Path destRoot = destDir.toAbsolutePath().normalize();
 
@@ -139,6 +151,10 @@ public final class ZipArchiveFs {
         int count = 0;
         int planned = 0;
         try (final ZipFile zip = new ZipFile(zipFile.toFile())) {
+            final String stripRoot = opts.eliminateDuplicationOfRootFolder()
+                    ? detectSingleRootFolder(zip, wanted, extractAll)
+                    : "";
+
             final Enumeration<? extends ZipEntry> scan = zip.entries();
             while (scan.hasMoreElements()) {
                 final ZipEntry entry = scan.nextElement();
@@ -147,6 +163,10 @@ public final class ZipArchiveFs {
                     continue;
                 }
                 if (!extractAll && !matchesSelection(name, wanted)) {
+                    continue;
+                }
+                final String mapped = mapExtractRelative(name, stripRoot, opts.pathMode());
+                if (mapped == null || mapped.isEmpty()) {
                     continue;
                 }
                 if (!entry.isDirectory() && !name.endsWith("/")) {
@@ -170,10 +190,31 @@ public final class ZipArchiveFs {
                 if (!extractAll && !matchesSelection(name, wanted)) {
                     continue;
                 }
-                final Path target = resolveSafe(destRoot, name);
-                if (entry.isDirectory() || name.endsWith("/")) {
+                final boolean isDir = entry.isDirectory() || name.endsWith("/");
+                final String mapped = mapExtractRelative(name, stripRoot, opts.pathMode());
+                if (mapped == null || mapped.isEmpty()) {
+                    continue;
+                }
+                // Flat mode: skip pure directory entries (no leaf name).
+                if (isDir && opts.pathMode() == ArchiveExtractOptions.PathMode.NO_PATHNAMES) {
+                    continue;
+                }
+                Path target = resolveSafe(destRoot, mapped);
+                if (isDir) {
                     Files.createDirectories(target);
                 } else {
+                    if (Files.exists(target)) {
+                        switch (opts.overwriteMode()) {
+                            case SKIP -> {
+                                if (control != null) {
+                                    control.advance("Skipped " + name);
+                                }
+                                continue;
+                            }
+                            case AUTO_RENAME -> target = uniqueExtractTarget(target);
+                            case OVERWRITE -> { /* replace below */ }
+                        }
+                    }
                     final Path parent = target.getParent();
                     if (parent != null) {
                         Files.createDirectories(parent);
@@ -192,6 +233,94 @@ public final class ZipArchiveFs {
             }
         }
         return count;
+    }
+
+    /**
+     * When every matching entry lives under one top-level folder (and no root files),
+     * return that folder prefix including trailing {@code /}; otherwise empty.
+     */
+    private static String detectSingleRootFolder(
+            final ZipFile zip,
+            final Set<String> wanted,
+            final boolean extractAll
+    ) {
+        final Set<String> tops = new LinkedHashSet<>();
+        boolean hasRootFile = false;
+        final Enumeration<? extends ZipEntry> entries = zip.entries();
+        while (entries.hasMoreElements()) {
+            final ZipEntry entry = entries.nextElement();
+            final String name = normalizeEntryName(entry.getName());
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (!extractAll && !matchesSelection(name, wanted)) {
+                continue;
+            }
+            final int slash = name.indexOf('/');
+            if (slash < 0) {
+                if (!entry.isDirectory()) {
+                    hasRootFile = true;
+                }
+                tops.add(name);
+            } else {
+                tops.add(name.substring(0, slash + 1));
+            }
+        }
+        if (hasRootFile || tops.size() != 1) {
+            return "";
+        }
+        final String only = tops.iterator().next();
+        return only.endsWith("/") ? only : "";
+    }
+
+    /**
+     * @return relative output path, empty if the entry is only the stripped root folder,
+     *         or {@code null} if mapping discarded the path.
+     */
+    private static String mapExtractRelative(
+            final String entryName,
+            final String stripRoot,
+            final ArchiveExtractOptions.PathMode pathMode
+    ) {
+        String relative = entryName;
+        if (stripRoot != null && !stripRoot.isEmpty()) {
+            if (!relative.startsWith(stripRoot)) {
+                return relative;
+            }
+            relative = relative.substring(stripRoot.length());
+            if (relative.isEmpty()) {
+                return "";
+            }
+        }
+        if (pathMode == ArchiveExtractOptions.PathMode.NO_PATHNAMES) {
+            if (relative.endsWith("/")) {
+                return "";
+            }
+            final int slash = relative.lastIndexOf('/');
+            return slash < 0 ? relative : relative.substring(slash + 1);
+        }
+        return relative;
+    }
+
+    /** {@code file.txt} → {@code file_1.txt}, {@code file_2.txt}, … */
+    private static Path uniqueExtractTarget(final Path target) {
+        if (!Files.exists(target)) {
+            return target;
+        }
+        final Path parent = target.getParent();
+        final String fileName = target.getFileName() != null ? target.getFileName().toString() : "file";
+        final int dot = fileName.lastIndexOf('.');
+        final String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+        final String ext = dot > 0 ? fileName.substring(dot) : "";
+        for (int i = 1; i < 10_000; i++) {
+            final Path candidate = parent == null
+                    ? Path.of(stem + "_" + i + ext)
+                    : parent.resolve(stem + "_" + i + ext);
+            if (!Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+        return target;
     }
 
     private static boolean matchesSelection(final String entryName, final Set<String> wanted) {

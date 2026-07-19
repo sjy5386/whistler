@@ -42,10 +42,55 @@ public final class TransferTargets {
     }
 
     /**
-     * Extract destination: other panel disk if dual; else empty (caller shows chooser).
+     * Extract destination: other panel disk if dual; else empty (caller shows chooser / dialog).
      */
     public static Optional<Path> defaultExtractDir(final boolean dualPanel, final BrowseLocation inactive) {
         return otherPanelDiskPath(dualPanel, inactive);
+    }
+
+    /**
+     * Default “Extract to” folder for the dialog (7zFM-style).
+     * Prefer the other panel’s disk path when dual; otherwise {@code <zip parent>/<stem>}.
+     */
+    public static Path defaultExtractDestination(
+            final Path zipFile,
+            final boolean dualPanel,
+            final BrowseLocation inactive
+    ) {
+        final Optional<Path> other = defaultExtractDir(dualPanel, inactive);
+        if (other.isPresent()) {
+            return other.get();
+        }
+        return extractToNamedFolder(zipFile);
+    }
+
+    /** Parent of the archive (or {@code user.home} if the zip has no parent). */
+    public static Path extractHereDir(final Path zipFile) {
+        if (zipFile == null) {
+            return Path.of(System.getProperty("user.home"));
+        }
+        final Path parent = zipFile.getParent();
+        return parent != null ? parent : Path.of(System.getProperty("user.home"));
+    }
+
+    /** {@code archive.zip} → {@code <parent>/archive} (no extension). */
+    public static Path extractToNamedFolder(final Path zipFile) {
+        return extractHereDir(zipFile).resolve(archiveStemName(zipFile));
+    }
+
+    /** File name without a trailing archive extension ({@code .zip}/{@code .jar}/{@code .war}). */
+    public static String archiveStemName(final Path zipFile) {
+        if (zipFile == null || zipFile.getFileName() == null) {
+            return "extracted";
+        }
+        final String name = zipFile.getFileName().toString();
+        final String lower = name.toLowerCase(java.util.Locale.ROOT);
+        for (final String ext : new String[]{".zip", ".jar", ".war"}) {
+            if (lower.endsWith(ext) && name.length() > ext.length()) {
+                return name.substring(0, name.length() - ext.length());
+            }
+        }
+        return name.isBlank() ? "extracted" : name;
     }
 
     /**

@@ -17,10 +17,12 @@ class FileManagerWiringTest {
     private static final Path PANEL = ROOT.resolve("ui/FilePanel.java");
     private static final Path ICONS = ROOT.resolve("ui/FileManagerIcons.java");
     private static final Path DIALOG = ROOT.resolve("ui/AddToArchiveDialog.java");
+    private static final Path EXTRACT_DIALOG = ROOT.resolve("ui/ExtractDialog.java");
     private static final Path TABLE_MODEL = ROOT.resolve("ui/FileTableModel.java");
     private static final Path INSERT = ROOT.resolve("listing/InsertSelection.java");
     private static final Path ARCHIVE_OPS = ROOT.resolve("archive/ArchiveOperations.java");
     private static final Path ARCHIVE_OPTS = ROOT.resolve("archive/ArchiveWriteOptions.java");
+    private static final Path EXTRACT_OPTS = ROOT.resolve("archive/ArchiveExtractOptions.java");
 
     @Test
     void applicationMainAndFrameExist() throws Exception {
@@ -128,6 +130,21 @@ class FileManagerWiringTest {
         assertTrue(!dialog.contains("Solid block"), "7z solid control should be gone");
         assertTrue(!dialog.contains("Create SFX"), "SFX control should be gone");
         assertTrue(!dialog.contains("Encryption"), "encryption stub panel should be gone");
+        assertTrue(frame.contains("ExtractDialog"), "7zFM-style Extract dialog wired");
+        assertTrue(frame.contains("actionExtractHere") || frame.contains("Extract Here"),
+                "quick Extract Here present");
+        assertTrue(frame.contains("actionExtractToNamedFolder") || frame.contains("Extract to \""),
+                "quick Extract to \"name\\\" present");
+        assertTrue(Files.isRegularFile(EXTRACT_DIALOG));
+        assertTrue(Files.isRegularFile(EXTRACT_OPTS));
+        final String extractDialog = Files.readString(EXTRACT_DIALOG);
+        for (final String token : new String[]{
+                "Extract to:", "Path mode:", "Overwrite mode:",
+                "Eliminate duplication of root folder", "Help"
+        }) {
+            assertTrue(extractDialog.contains(token), "extract dialog layout missing: " + token);
+        }
+        assertTrue(!extractDialog.contains("Enter password"), "password field not productized yet");
         assertTrue(frame.contains("deleteEntries"), "zip delete wired");
         assertTrue(frame.contains("renameEntry"), "zip rename wired");
         assertTrue(frame.contains(".mkdir(") || frame.contains("mkdir(loc"), "zip mkdir wired");

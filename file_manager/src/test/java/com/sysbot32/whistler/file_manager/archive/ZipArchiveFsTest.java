@@ -195,6 +195,84 @@ class ZipArchiveFsTest {
     }
 
     @Test
+    void extractSkipExistingLeavesOldContent() throws Exception {
+        final Path a = this.tempDir.resolve("a.txt");
+        Files.writeString(a, "NEW");
+        final Path zip = this.tempDir.resolve("skip.zip");
+        ZipArchiveFs.createZip(zip, List.of(a));
+
+        final Path out = Files.createDirectory(this.tempDir.resolve("skip-out"));
+        Files.writeString(out.resolve("a.txt"), "OLD");
+        final ArchiveExtractOptions opts = new ArchiveExtractOptions(
+                ArchiveExtractOptions.PathMode.FULL_PATHNAMES,
+                ArchiveExtractOptions.OverwriteMode.SKIP,
+                false
+        );
+        final int count = ZipArchiveFs.extract(zip, List.of(), out, true, null, opts);
+        assertEquals(0, count);
+        assertEquals("OLD", Files.readString(out.resolve("a.txt")));
+    }
+
+    @Test
+    void extractAutoRenameAvoidsCollision() throws Exception {
+        final Path a = this.tempDir.resolve("a.txt");
+        Files.writeString(a, "NEW");
+        final Path zip = this.tempDir.resolve("rename.zip");
+        ZipArchiveFs.createZip(zip, List.of(a));
+
+        final Path out = Files.createDirectory(this.tempDir.resolve("rename-out"));
+        Files.writeString(out.resolve("a.txt"), "OLD");
+        final ArchiveExtractOptions opts = new ArchiveExtractOptions(
+                ArchiveExtractOptions.PathMode.FULL_PATHNAMES,
+                ArchiveExtractOptions.OverwriteMode.AUTO_RENAME,
+                false
+        );
+        final int count = ZipArchiveFs.extract(zip, List.of(), out, true, null, opts);
+        assertEquals(1, count);
+        assertEquals("OLD", Files.readString(out.resolve("a.txt")));
+        assertEquals("NEW", Files.readString(out.resolve("a_1.txt")));
+    }
+
+    @Test
+    void extractNoPathnamesFlattens() throws Exception {
+        final Path root = Files.createDirectory(this.tempDir.resolve("pack"));
+        final Path nested = Files.createDirectory(root.resolve("deep"));
+        Files.writeString(nested.resolve("leaf.txt"), "flat");
+        final Path zip = this.tempDir.resolve("flat.zip");
+        ZipArchiveFs.createZip(zip, List.of(root));
+
+        final Path out = Files.createDirectory(this.tempDir.resolve("flat-out"));
+        final ArchiveExtractOptions opts = new ArchiveExtractOptions(
+                ArchiveExtractOptions.PathMode.NO_PATHNAMES,
+                ArchiveExtractOptions.OverwriteMode.OVERWRITE,
+                false
+        );
+        final int count = ZipArchiveFs.extract(zip, List.of(), out, true, null, opts);
+        assertEquals(1, count);
+        assertEquals("flat", Files.readString(out.resolve("leaf.txt")));
+        assertTrue(Files.notExists(out.resolve("pack")));
+    }
+
+    @Test
+    void extractEliminateSingleRootFolder() throws Exception {
+        final Path root = Files.createDirectory(this.tempDir.resolve("onlyroot"));
+        Files.writeString(root.resolve("readme.txt"), "hi");
+        final Path zip = this.tempDir.resolve("root.zip");
+        ZipArchiveFs.createZip(zip, List.of(root));
+
+        final Path out = Files.createDirectory(this.tempDir.resolve("strip-out"));
+        final ArchiveExtractOptions opts = new ArchiveExtractOptions(
+                ArchiveExtractOptions.PathMode.FULL_PATHNAMES,
+                ArchiveExtractOptions.OverwriteMode.OVERWRITE,
+                true
+        );
+        final int count = ZipArchiveFs.extract(zip, List.of(), out, true, null, opts);
+        assertEquals(1, count);
+        assertEquals("hi", Files.readString(out.resolve("readme.txt")));
+        assertTrue(Files.notExists(out.resolve("onlyroot/readme.txt")));
+    }
+
+    @Test
     void addToExistingZipWithCancelCheck() throws Exception {
         final Path a = Files.writeString(this.tempDir.resolve("old.txt"), "old");
         final Path zip = this.tempDir.resolve("add.zip");

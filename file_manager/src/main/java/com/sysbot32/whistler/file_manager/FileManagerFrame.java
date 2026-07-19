@@ -1,6 +1,7 @@
 package com.sysbot32.whistler.file_manager;
 
 import com.sysbot32.whistler.config.Config;
+import com.sysbot32.whistler.file_manager.archive.ArchiveExtractOptions;
 import com.sysbot32.whistler.file_manager.archive.ArchiveWriteOptions;
 import com.sysbot32.whistler.file_manager.archive.Archives;
 import com.sysbot32.whistler.file_manager.listing.DirectoryListing;
@@ -175,7 +176,7 @@ public final class FileManagerFrame extends JFrame {
         bar.setFloatable(false);
         bar.setRollover(true);
         bar.add(toolButton(FileManagerIcons.Tool.ADD, "Add", "Add to archive…", this::actionAddCreateNew));
-        bar.add(toolButton(FileManagerIcons.Tool.EXTRACT, "Extract", "Extract", this::actionExtract));
+        bar.add(toolButton(FileManagerIcons.Tool.EXTRACT, "Extract", "Extract…", this::actionExtract));
         bar.add(toolButton(FileManagerIcons.Tool.TEST, "Test", "Test archive", this::actionTest));
         bar.addSeparator();
         bar.add(toolButton(FileManagerIcons.Tool.COPY, "Copy", "Copy (F5)", this::actionCopy));
@@ -425,9 +426,9 @@ public final class FileManagerFrame extends JFrame {
         bind(im, am, "currentOther", KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_DOWN_MASK), this::openCurrentInOther);
         bind(im, am, "currentOtherR", KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_DOWN_MASK), this::openCurrentInOther);
         bind(im, am, "leftPath", KeyStroke.getKeyStroke(KeyEvent.VK_F1, InputEvent.ALT_DOWN_MASK),
-                () -> this.leftPanel.focusPathField());
+                this.leftPanel::focusPathField);
         bind(im, am, "rightPath", KeyStroke.getKeyStroke(KeyEvent.VK_F2, InputEvent.ALT_DOWN_MASK),
-                () -> this.rightPanel.focusPathField());
+                this.rightPanel::focusPathField);
         for (int d = 0; d <= 9; d++) {
             final int slot = d;
             bind(im, am, "bmOpen" + d, KeyStroke.getKeyStroke(KeyEvent.VK_0 + d, InputEvent.ALT_DOWN_MASK),
@@ -1117,13 +1118,11 @@ public final class FileManagerFrame extends JFrame {
         final Path diskLead = safeResolveDisk(panel, lead);
         final List<Path> diskSelected = disk ? panel.getSelectedDiskPaths() : List.of();
         final boolean anyZipSelected = zip || diskSelected.stream().anyMatch(DirectoryListing::looksLikeZip)
-                || (diskLead != null && DirectoryListing.looksLikeZip(diskLead));
+                || (DirectoryListing.looksLikeZip(diskLead));
         final boolean canExtract = zip || anyZipSelected;
         final boolean canTest = canExtract;
-        final boolean oneDiskFile = disk && single && leadFile
-                && diskSelected.size() <= 1
-                && (diskSelected.isEmpty() ? diskLead != null && Files.isRegularFile(diskLead)
-                : diskSelected.size() == 1 && Files.isRegularFile(diskSelected.getFirst()));
+        final boolean oneDiskFile = disk && single && leadFile && diskSelected.size() <= 1 && (diskSelected.isEmpty() ? diskLead != null && Files.isRegularFile(diskLead)
+                : Files.isRegularFile(diskSelected.getFirst()));
         final boolean multiDiskFiles = disk && diskSelected.size() >= 2
                 && diskSelected.stream().allMatch(Files::isRegularFile);
         final boolean canChecksum = disk && canMutateSelection
@@ -1157,10 +1156,23 @@ public final class FileManagerFrame extends JFrame {
                 ));
             }
             archiveMenu.addSeparator();
-            archiveMenu.add(popupItem("Extract files...", canExtract, this::actionExtract));
+            // 7z shell order: dialog first, then quick Here / named folder
+            archiveMenu.add(popupItem("Extract files…", canExtract, this::actionExtract));
+            archiveMenu.add(popupItem("Extract Here", canExtract, this::actionExtractHere));
+            final String extractFolderLabel = canExtract
+                    ? "Extract to \"" + TransferTargets.archiveStemName(
+                    resolveZipForExtractLabel(panel, diskSelected, diskLead)) + "\\\""
+                    : "Extract to \"…\\\"";
+            archiveMenu.add(popupItem(extractFolderLabel, canExtract, this::actionExtractToNamedFolder));
             archiveMenu.add(popupItem("Test archive", canTest, this::actionTest));
         } else if (zip) {
-            archiveMenu.add(popupItem("Extract...", true, this::actionExtract));
+            archiveMenu.add(popupItem("Extract…", true, this::actionExtract));
+            archiveMenu.add(popupItem("Extract Here", true, this::actionExtractHere));
+            archiveMenu.add(popupItem(
+                    "Extract to \"" + TransferTargets.archiveStemName(loc.path()) + "\\\"",
+                    true,
+                    this::actionExtractToNamedFolder
+            ));
             archiveMenu.add(popupItem("Test archive", true, this::actionTest));
         }
         if (archiveMenu.getItemCount() > 0) {
@@ -1425,8 +1437,8 @@ public final class FileManagerFrame extends JFrame {
                 FileComments.set(target, next);
                 setStatus("Comment saved");
             }
-        } catch (final Exception ex) {
-            showError("Comment failed", ex instanceof Exception e ? e : new Exception(ex));
+        } catch (final Exception e) {
+            showError("Comment failed", e);
         }
     }
 
@@ -1519,8 +1531,8 @@ public final class FileManagerFrame extends JFrame {
             FileLinks.create(kind, linkPath, target);
             setStatus("Created " + kindChoice + ": " + name.trim());
             panel.refreshAsync();
-        } catch (final Exception ex) {
-            showError("Link failed", ex instanceof Exception e ? e : new Exception(ex));
+        } catch (final Exception e) {
+            showError("Link failed", e);
         }
     }
 
@@ -1602,8 +1614,8 @@ public final class FileManagerFrame extends JFrame {
                 AlternateStreams.delete(target, pick);
                 setStatus("Deleted stream " + pick);
             }
-        } catch (final Exception ex) {
-            showError("Alternate streams failed", ex instanceof Exception e ? e : new Exception(ex));
+        } catch (final Exception e) {
+            showError("Alternate streams failed", e);
         }
     }
 
@@ -1714,85 +1726,118 @@ public final class FileManagerFrame extends JFrame {
         return "archive.zip";
     }
 
+    /**
+     * Label helper for context menu “Extract to \"name\\\"” without resolving a full plan.
+     */
+    private static Path resolveZipForExtractLabel(
+            final FilePanel panel,
+            final List<Path> diskSelected,
+            final Path diskLead
+    ) {
+        if (panel.getLocationModel().isZip()) {
+            return panel.getLocationModel().path();
+        }
+        if (diskSelected.size() == 1 && DirectoryListing.looksLikeZip(diskSelected.getFirst())) {
+            return diskSelected.getFirst();
+        }
+        if (DirectoryListing.looksLikeZip(diskLead)) {
+            return diskLead;
+        }
+        return Path.of("archive.zip");
+    }
+
+    /** Toolbar / “Extract files…” — 7zFM-style dedicated dialog. */
     private void actionExtract() {
+        final ExtractJob job = resolveExtractJob();
+        if (job == null) {
+            return;
+        }
+        final Path defaultDest = TransferTargets.defaultExtractDestination(
+                job.zipFile(),
+                this.dualPanel,
+                inactivePanel().getLocationModel()
+        );
+        final ExtractDialog dialog = new ExtractDialog(this, defaultDest);
+        dialog.showDialog().ifPresent(result ->
+                runExtract(job, result.destDir(), result.options())
+        );
+    }
+
+    /** Quick: extract next to the archive (same folder as the .zip). */
+    private void actionExtractHere() {
+        final ExtractJob job = resolveExtractJob();
+        if (job == null) {
+            return;
+        }
+        runExtract(job, TransferTargets.extractHereDir(job.zipFile()), ArchiveExtractOptions.defaults());
+    }
+
+    /** Quick: extract into {@code <parent>/<archive stem>/}. */
+    private void actionExtractToNamedFolder() {
+        final ExtractJob job = resolveExtractJob();
+        if (job == null) {
+            return;
+        }
+        runExtract(job, TransferTargets.extractToNamedFolder(job.zipFile()), ArchiveExtractOptions.defaults());
+    }
+
+    private record ExtractJob(Path zipFile, List<String> internal, boolean extractAll, FilePanel panel) {
+    }
+
+    /** @return job, or null if invalid (status already set) */
+    private ExtractJob resolveExtractJob() {
         final FilePanel panel = this.activePanel;
         final BrowseLocation loc = panel.getLocationModel();
 
-        Path zipFile;
-        List<String> internal;
-        boolean extractAll;
-
         if (loc.isZip()) {
-            zipFile = loc.path();
             final TransferTargets.ExtractPlan plan =
                     TransferTargets.planZipExtract(loc, panel.getSelectedZipInternalPaths());
-            extractAll = plan.extractAll();
-            internal = plan.internalPaths();
-        } else {
-            final List<Path> selected = panel.getSelectedDiskPaths();
-            final Path zipCandidate;
-            if (selected.size() == 1 && DirectoryListing.looksLikeZip(selected.getFirst())) {
-                zipCandidate = selected.getFirst();
-            } else if (selected.isEmpty()) {
-                final FileEntry lead = panel.getLeadEntry();
-                if (lead != null && !lead.parentLink()) {
-                    final Path p = panel.resolveDiskEntry(lead);
-                    if (DirectoryListing.looksLikeZip(p)) {
-                        zipCandidate = p;
-                    } else {
-                        setStatus("Select a zip archive to extract");
-                        return;
-                    }
+            return new ExtractJob(loc.path(), plan.internalPaths(), plan.extractAll(), panel);
+        }
+
+        final List<Path> selected = panel.getSelectedDiskPaths();
+        final Path zipCandidate;
+        if (selected.size() == 1 && DirectoryListing.looksLikeZip(selected.getFirst())) {
+            zipCandidate = selected.getFirst();
+        } else if (selected.isEmpty()) {
+            final FileEntry lead = panel.getLeadEntry();
+            if (lead != null && !lead.parentLink()) {
+                final Path p = panel.resolveDiskEntry(lead);
+                if (DirectoryListing.looksLikeZip(p)) {
+                    zipCandidate = p;
                 } else {
                     setStatus("Select a zip archive to extract");
-                    return;
+                    return null;
                 }
             } else {
-                setStatus("Select a single zip archive to extract");
-                return;
+                setStatus("Select a zip archive to extract");
+                return null;
             }
-            zipFile = zipCandidate;
-            extractAll = true;
-            internal = List.of();
-        }
-
-        Path destDir = TransferTargets.defaultExtractDir(this.dualPanel, inactivePanel().getLocationModel())
-                .orElse(null);
-        if (destDir == null) {
-            final Path start = loc.isDisk()
-                    ? loc.path()
-                    : (zipFile.getParent() != null ? zipFile.getParent() : Path.of("."));
-            final JFileChooser chooser = new JFileChooser(start.toFile());
-            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            chooser.setDialogTitle("Extract to");
-            if (chooser.showDialog(this, "Extract") != JFileChooser.APPROVE_OPTION) {
-                return;
-            }
-            destDir = chooser.getSelectedFile().toPath();
         } else {
-            final String what = extractAll ? "entire archive" : (internal.size() + " selected path(s)");
-            final int confirm = JOptionPane.showConfirmDialog(
-                    this,
-                    "Extract " + what + " to:\n" + destDir + "?",
-                    "Extract",
-                    JOptionPane.OK_CANCEL_OPTION
-            );
-            if (confirm != JOptionPane.OK_OPTION) {
-                return;
-            }
+            setStatus("Select a single zip archive to extract");
+            return null;
         }
+        return new ExtractJob(zipCandidate, List.of(), true, panel);
+    }
 
+    private void runExtract(
+            final ExtractJob job,
+            final Path destDir,
+            final ArchiveExtractOptions options
+    ) {
         final Path dest = destDir;
-        final Path zip = zipFile;
-        final List<String> paths = internal;
-        final boolean all = extractAll;
+        final Path zip = job.zipFile();
+        final List<String> paths = job.internal();
+        final boolean all = job.extractAll();
+        final FilePanel panel = job.panel();
+        final ArchiveExtractOptions opts = options == null ? ArchiveExtractOptions.defaults() : options;
         final TransferControl control = new TransferControl();
         setStatus("Extracting…");
         ProgressTasks.run(
                 this,
                 "Extract",
                 control,
-                () -> Archives.zip().extract(zip, paths, dest, all, control),
+                () -> Archives.zip().extract(zip, paths, dest, all, control, opts),
                 count -> {
                     setStatus("Extracted " + count + " file(s)");
                     if (this.dualPanel) {

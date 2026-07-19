@@ -56,6 +56,17 @@ public interface ArchiveOperations {
             TransferControl control
     ) throws IOException;
 
+    default int extract(
+            Path archive,
+            List<String> internalPaths,
+            Path destDir,
+            boolean extractAll,
+            TransferControl control,
+            ArchiveExtractOptions options
+    ) throws IOException {
+        return extract(archive, internalPaths, destDir, extractAll, control);
+    }
+
     int test(Path archive) throws IOException;
 
     int deleteEntries(Path archive, List<String> internalPaths, TransferControl control)

@@ -4,7 +4,6 @@ import com.sysbot32.whistler.file_manager.model.FileEntry;
 import com.sysbot32.whistler.file_manager.ops.TransferControl;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
@@ -81,7 +80,19 @@ public final class ZipArchiveOperations implements ArchiveOperations {
             final boolean extractAll,
             final TransferControl control
     ) throws IOException {
-        return ZipArchiveFs.extract(archive, internalPaths, destDir, extractAll, control);
+        return extract(archive, internalPaths, destDir, extractAll, control, ArchiveExtractOptions.defaults());
+    }
+
+    @Override
+    public int extract(
+            final Path archive,
+            final List<String> internalPaths,
+            final Path destDir,
+            final boolean extractAll,
+            final TransferControl control,
+            final ArchiveExtractOptions options
+    ) throws IOException {
+        return ZipArchiveFs.extract(archive, internalPaths, destDir, extractAll, control, options);
     }
 
     @Override
@@ -129,10 +140,5 @@ public final class ZipArchiveOperations implements ArchiveOperations {
     @Override
     public void setComment(final Path archive, final String comment) throws IOException {
         ZipArchiveFs.setComment(archive, comment);
-    }
-
-    /** Whether the path is a regular file that this backend can open as a zip. */
-    public static boolean isZipArchiveFile(final Path path) {
-        return path != null && Files.isRegularFile(path) && new ZipArchiveOperations().supports(path);
     }
 }
