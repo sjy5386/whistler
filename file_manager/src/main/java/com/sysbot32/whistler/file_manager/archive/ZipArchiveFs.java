@@ -1,6 +1,8 @@
 package com.sysbot32.whistler.file_manager.archive;
 
 import com.sysbot32.whistler.file_manager.model.FileEntry;
+import com.sysbot32.whistler.file_manager.ops.CollisionPolicy;
+import com.sysbot32.whistler.file_manager.ops.ExtractCollisionAsk;
 import com.sysbot32.whistler.file_manager.ops.TransferControl;
 
 import lombok.experimental.UtilityClass;
@@ -118,7 +120,7 @@ public final class ZipArchiveFs {
             final boolean extractAll,
             final TransferControl control
     ) throws IOException {
-        return extract(zipFile, internalPaths, destDir, extractAll, control, ArchiveExtractOptions.defaults());
+        return extract(zipFile, internalPaths, destDir, extractAll, control, ArchiveExtractOptions.defaults(), null);
     }
 
     public static int extract(
@@ -129,9 +131,22 @@ public final class ZipArchiveFs {
             final TransferControl control,
             final ArchiveExtractOptions options
     ) throws IOException {
+        return extract(zipFile, internalPaths, destDir, extractAll, control, options, null);
+    }
+
+    public static int extract(
+            final Path zipFile,
+            final List<String> internalPaths,
+            final Path destDir,
+            final boolean extractAll,
+            final TransferControl control,
+            final ArchiveExtractOptions options,
+            final ExtractCollisionAsk ask
+    ) throws IOException {
         Objects.requireNonNull(zipFile, "zipFile");
         Objects.requireNonNull(destDir, "destDir");
         final ArchiveExtractOptions opts = options == null ? ArchiveExtractOptions.defaults() : options;
+        final CollisionPolicy.Session askSession = new CollisionPolicy.Session();
         Files.createDirectories(destDir);
         final Path destRoot = destDir.toAbsolutePath().normalize();
 
@@ -204,15 +219,22 @@ public final class ZipArchiveFs {
                     Files.createDirectories(target);
                 } else {
                     if (Files.exists(target)) {
-                        switch (opts.overwriteMode()) {
+                        final boolean proceed = switch (opts.overwriteMode()) {
                             case SKIP -> {
                                 if (control != null) {
                                     control.advance("Skipped " + name);
                                 }
-                                continue;
+                                yield false;
                             }
-                            case AUTO_RENAME -> target = uniqueExtractTarget(target);
-                            case OVERWRITE -> { /* replace below */ }
+                            case AUTO_RENAME -> {
+                                target = uniqueExtractTarget(target);
+                                yield true;
+                            }
+                            case OVERWRITE -> true;
+                            case ASK -> resolveAskOverwrite(target, name, ask, askSession, control);
+                        };
+                        if (!proceed) {
+                            continue;
                         }
                     }
                     final Path parent = target.getParent();
@@ -233,6 +255,43 @@ public final class ZipArchiveFs {
             }
         }
         return count;
+    }
+
+    /**
+     * @return true to write (overwrite), false to skip this entry
+     */
+    private static boolean resolveAskOverwrite(
+            final Path target,
+            final String entryName,
+            final ExtractCollisionAsk ask,
+            final CollisionPolicy.Session session,
+            final TransferControl control
+    ) throws IOException {
+        if (ask == null) {
+            // Non-interactive callers: same as overwrite without prompt
+            return true;
+        }
+        if (session.remember() == CollisionPolicy.Remember.OVERWRITE_ALL) {
+            return true;
+        }
+        if (session.remember() == CollisionPolicy.Remember.SKIP_ALL) {
+            if (control != null) {
+                control.advance("Skipped " + entryName);
+            }
+            return false;
+        }
+        final CollisionPolicy.UserChoice choice = ask.ask(target, entryName);
+        final CollisionPolicy.Decision decision = session.decide(true, choice);
+        return switch (decision.action()) {
+            case PROCEED -> true;
+            case SKIP -> {
+                if (control != null) {
+                    control.advance("Skipped " + entryName);
+                }
+                yield false;
+            }
+            case ABORT -> throw new java.util.concurrent.CancellationException("Extract cancelled");
+        };
     }
 
     /**
@@ -377,6 +436,7 @@ public final class ZipArchiveFs {
         try (final OutputStream fileOut = Files.newOutputStream(zipFile);
              final ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
             zipOut.setLevel(opts.compressionLevel());
+            final Set<String> usedNames = new HashSet<>();
             for (final Path source : sources) {
                 if (control != null) {
                     control.throwIfCancelled();
@@ -386,11 +446,7 @@ public final class ZipArchiveFs {
                     throw new IOException("Missing: " + abs);
                 }
                 final String baseName = abs.getFileName() != null ? abs.getFileName().toString() : "item";
-                if (Files.isDirectory(abs)) {
-                    addDirectory(zipOut, abs, baseName, control);
-                } else {
-                    addFile(zipOut, abs, baseName);
-                }
+                addSourceWithPathMode(zipOut, abs, baseName, opts.pathMode(), usedNames, control);
                 if (control != null) {
                     control.advance("Added " + baseName);
                 }
@@ -507,6 +563,7 @@ public final class ZipArchiveFs {
                 },
                 zipOut -> {
                     zipOut.setLevel(opts.compressionLevel());
+                    final Set<String> usedNames = new HashSet<>();
                     for (final Path abs : toWrite) {
                         if (control != null) {
                             control.throwIfCancelled();
@@ -514,11 +571,7 @@ public final class ZipArchiveFs {
                         final String baseName = abs.getFileName() != null
                                 ? abs.getFileName().toString() : "item";
                         final String entryPrefix = destPrefix + baseName;
-                        if (Files.isDirectory(abs)) {
-                            addDirectory(zipOut, abs, entryPrefix, control);
-                        } else {
-                            addFile(zipOut, abs, entryPrefix);
-                        }
+                        addSourceWithPathMode(zipOut, abs, entryPrefix, opts.pathMode(), usedNames, control);
                         if (control != null) {
                             control.advance("Added " + baseName);
                         }
@@ -770,6 +823,73 @@ public final class ZipArchiveFs {
             }
             throw new IOException(ex);
         }
+    }
+
+    private static void addSourceWithPathMode(
+            final ZipOutputStream zipOut,
+            final Path abs,
+            final String relativeOrPrefix,
+            final ArchiveWriteOptions.PathMode pathMode,
+            final Set<String> usedNames,
+            final TransferControl control
+    ) throws IOException {
+        final ArchiveWriteOptions.PathMode mode =
+                pathMode == null ? ArchiveWriteOptions.PathMode.RELATIVE_PATHNAMES : pathMode;
+        if (mode == ArchiveWriteOptions.PathMode.NO_PATHNAMES) {
+            if (Files.isDirectory(abs)) {
+                addDirectoryFlattened(zipOut, abs, usedNames, control);
+            } else {
+                final String leaf = abs.getFileName() != null ? abs.getFileName().toString() : "file";
+                addFile(zipOut, abs, uniqueZipEntryName(leaf, usedNames));
+            }
+            return;
+        }
+        if (Files.isDirectory(abs)) {
+            addDirectory(zipOut, abs, relativeOrPrefix, control);
+        } else {
+            addFile(zipOut, abs, relativeOrPrefix);
+        }
+        usedNames.add(normalizeEntryName(relativeOrPrefix));
+    }
+
+    private static void addDirectoryFlattened(
+            final ZipOutputStream zipOut,
+            final Path dir,
+            final Set<String> usedNames,
+            final TransferControl control
+    ) throws IOException {
+        try (final var stream = Files.walk(dir)) {
+            for (final Path child : stream.sorted().toList()) {
+                if (control != null) {
+                    control.throwIfCancelled();
+                }
+                if (!Files.isRegularFile(child)) {
+                    continue;
+                }
+                final String leaf = child.getFileName() != null ? child.getFileName().toString() : "file";
+                addFile(zipOut, child, uniqueZipEntryName(leaf, usedNames));
+            }
+        }
+    }
+
+    private static String uniqueZipEntryName(final String preferred, final Set<String> usedNames) {
+        String name = preferred == null || preferred.isBlank() ? "file" : preferred.replace('\\', '/');
+        if (!usedNames.contains(name)) {
+            usedNames.add(name);
+            return name;
+        }
+        final int dot = name.lastIndexOf('.');
+        final String stem = dot > 0 ? name.substring(0, dot) : name;
+        final String ext = dot > 0 ? name.substring(dot) : "";
+        for (int i = 1; i < 10_000; i++) {
+            final String candidate = stem + "_" + i + ext;
+            if (!usedNames.contains(candidate)) {
+                usedNames.add(candidate);
+                return candidate;
+            }
+        }
+        usedNames.add(name);
+        return name;
     }
 
     private static void addDirectory(

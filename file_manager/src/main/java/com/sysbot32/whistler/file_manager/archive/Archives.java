@@ -54,6 +54,29 @@ public class Archives {
     }
 
     /**
+     * Whether any registered backend claims this path by name/extension
+     * (file need not exist yet — used when creating a new archive).
+     */
+    public static boolean isSupportedArchiveName(final Path archiveFile) {
+        if (archiveFile == null) {
+            return false;
+        }
+        for (final ArchiveOperations b : backends()) {
+            if (b.supports(archiveFile)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Regular file that a registered backend can open (UI “looks like archive” check).
+     */
+    public static boolean isOpenableArchive(final Path path) {
+        return path != null && Files.isRegularFile(path) && isSupportedArchiveName(path);
+    }
+
+    /**
      * Resolve backend for an archive file path (by registered {@link ArchiveOperations#supports}).
      */
     public static ArchiveOperations forArchive(final Path archiveFile) throws IOException {

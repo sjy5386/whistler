@@ -122,10 +122,13 @@ class FileManagerWiringTest {
         final String dialog = Files.readString(DIALOG);
         for (final String token : new String[]{
                 "Archive format:", "Compression level:", "Compression method:",
-                "Update mode:", "Path mode:", "Delete files after", "Help", "syncMethodEnabled"
+                "Update mode:", "Path mode:", "Delete files after", "Help", "syncMethodEnabled",
+                "Relative pathnames", "No pathnames"
         }) {
             assertTrue(dialog.contains(token), "dialog layout missing: " + token);
         }
+        assertTrue(!dialog.contains("setEnabled(false); // backend always uses relative"),
+                "path mode should be enabled");
         assertTrue(!dialog.contains("Dictionary size:"), "7z dictionary control should be gone");
         assertTrue(!dialog.contains("Solid block"), "7z solid control should be gone");
         assertTrue(!dialog.contains("Create SFX"), "SFX control should be gone");
@@ -140,11 +143,21 @@ class FileManagerWiringTest {
         final String extractDialog = Files.readString(EXTRACT_DIALOG);
         for (final String token : new String[]{
                 "Extract to:", "Path mode:", "Overwrite mode:",
-                "Eliminate duplication of root folder", "Help"
+                "Eliminate duplication of root folder", "Help",
+                "Ask before overwrite"
         }) {
             assertTrue(extractDialog.contains(token), "extract dialog layout missing: " + token);
         }
         assertTrue(!extractDialog.contains("Enter password"), "password field not productized yet");
+        assertTrue(frame.contains("promptExtractCollision") || frame.contains("ExtractCollisionAsk"),
+                "extract ask overwrite wired");
+        assertTrue(frame.contains("handleFilesDropped") || frame.contains("setDropFilesHandler"),
+                "DnD drop handler wired");
+        assertTrue(panel.contains("installDragAndDrop") || panel.contains("ListingTransferHandler")
+                        || panel.contains("javaFileListFlavor"),
+                "panel drag-and-drop wired");
+        assertTrue(frame.contains("AccessCoaching"), "TCC/permission coaching wired");
+        assertTrue(Files.isRegularFile(ROOT.resolve("ops/AccessCoaching.java")));
         assertTrue(frame.contains("deleteEntries"), "zip delete wired");
         assertTrue(frame.contains("renameEntry"), "zip rename wired");
         assertTrue(frame.contains(".mkdir(") || frame.contains("mkdir(loc"), "zip mkdir wired");

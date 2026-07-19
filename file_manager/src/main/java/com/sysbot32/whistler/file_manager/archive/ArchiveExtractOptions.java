@@ -17,7 +17,12 @@ public record ArchiveExtractOptions(
     }
 
     public enum OverwriteMode {
-        /** Replace existing files without prompting (default; matches prior FM behaviour). */
+        /**
+         * Prompt via {@link com.sysbot32.whistler.file_manager.ops.ExtractCollisionAsk}
+         * when the target exists (dialog default). Quick extract paths use {@link #OVERWRITE}.
+         */
+        ASK,
+        /** Replace existing files without prompting. */
         OVERWRITE,
         /** Leave existing targets; skip those entries. */
         SKIP,

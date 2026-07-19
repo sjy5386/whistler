@@ -22,7 +22,7 @@ public final class AddToArchiveDialog extends JDialog {
     private final JComboBox<LevelItem> levelBox = new JComboBox<>(LevelItem.values());
     private final JComboBox<String> methodBox = new JComboBox<>(new String[]{"Deflate"});
     private final JComboBox<UpdateItem> updateBox = new JComboBox<>(UpdateItem.values());
-    private final JComboBox<String> pathModeBox = new JComboBox<>(new String[]{"Relative pathnames"});
+    private final JComboBox<PathModeItem> pathModeBox = new JComboBox<>(PathModeItem.values());
     private final JCheckBox deleteAfter = new JCheckBox("Delete files after compression");
 
     private Result result;
@@ -33,8 +33,7 @@ public final class AddToArchiveDialog extends JDialog {
         this.archiveField.setText(defaultArchive.toAbsolutePath().normalize().toString());
         this.levelBox.setSelectedItem(LevelItem.NORMAL);
         this.updateBox.setSelectedItem(UpdateItem.ADD_AND_REPLACE);
-        this.pathModeBox.setSelectedIndex(0);
-        this.pathModeBox.setEnabled(false); // backend always uses relative names
+        this.pathModeBox.setSelectedItem(PathModeItem.RELATIVE);
         this.formatBox.setEnabled(false);   // only Zip registered
 
         this.levelBox.addActionListener(e -> syncMethodEnabled());
@@ -141,6 +140,7 @@ public final class AddToArchiveDialog extends JDialog {
                         · Archive: new or existing .zip path
                         · Compression level / method (Store disables method)
                         · Update mode: add/replace, update, freshen
+                        · Path mode: relative names or flatten to file names
                         · Delete files after compression
 
                         Only the Zip backend is available in this build.""",
@@ -201,13 +201,33 @@ public final class AddToArchiveDialog extends JDialog {
         }
         final LevelItem level = (LevelItem) this.levelBox.getSelectedItem();
         final UpdateItem update = (UpdateItem) this.updateBox.getSelectedItem();
+        final PathModeItem pathMode = (PathModeItem) this.pathModeBox.getSelectedItem();
         final ArchiveWriteOptions options = new ArchiveWriteOptions(
                 level == null ? 6 : level.level,
                 update == null ? ArchiveWriteOptions.UpdateMode.ADD_AND_REPLACE : update.mode,
+                pathMode == null ? ArchiveWriteOptions.PathMode.RELATIVE_PATHNAMES : pathMode.mode,
                 this.deleteAfter.isSelected()
         );
         this.result = new Result(archive.toAbsolutePath().normalize(), options);
         dispose();
+    }
+
+    private enum PathModeItem {
+        RELATIVE("Relative pathnames", ArchiveWriteOptions.PathMode.RELATIVE_PATHNAMES),
+        NONE("No pathnames", ArchiveWriteOptions.PathMode.NO_PATHNAMES);
+
+        final String label;
+        final ArchiveWriteOptions.PathMode mode;
+
+        PathModeItem(final String label, final ArchiveWriteOptions.PathMode mode) {
+            this.label = label;
+            this.mode = mode;
+        }
+
+        @Override
+        public String toString() {
+            return this.label;
+        }
     }
 
     private enum LevelItem {

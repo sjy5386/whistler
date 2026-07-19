@@ -1,6 +1,7 @@
 package com.sysbot32.whistler.file_manager.archive;
 
 import com.sysbot32.whistler.file_manager.model.FileEntry;
+import com.sysbot32.whistler.file_manager.ops.ExtractCollisionAsk;
 import com.sysbot32.whistler.file_manager.ops.TransferControl;
 
 import java.io.IOException;
@@ -92,7 +93,20 @@ public final class ZipArchiveOperations implements ArchiveOperations {
             final TransferControl control,
             final ArchiveExtractOptions options
     ) throws IOException {
-        return ZipArchiveFs.extract(archive, internalPaths, destDir, extractAll, control, options);
+        return extract(archive, internalPaths, destDir, extractAll, control, options, null);
+    }
+
+    @Override
+    public int extract(
+            final Path archive,
+            final List<String> internalPaths,
+            final Path destDir,
+            final boolean extractAll,
+            final TransferControl control,
+            final ArchiveExtractOptions options,
+            final ExtractCollisionAsk ask
+    ) throws IOException {
+        return ZipArchiveFs.extract(archive, internalPaths, destDir, extractAll, control, options, ask);
     }
 
     @Override

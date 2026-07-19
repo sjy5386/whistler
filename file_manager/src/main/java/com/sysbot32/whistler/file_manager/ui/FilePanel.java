@@ -19,7 +19,11 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.*;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,6 +67,9 @@ public final class FilePanel extends JPanel {
     /** Right-click popup; receives the listing component that was clicked. */
     private Consumer<MouseEvent> contextMenuHandler = e -> {
     };
+    /** Dropped files (from Finder or another panel); frame performs copy/add. */
+    private Consumer<List<Path>> dropFilesHandler = paths -> {
+    };
     @Getter
     private boolean flatView;
     @Getter
@@ -104,6 +111,7 @@ public final class FilePanel extends JPanel {
 
         this.configureTable();
         this.configureIconList();
+        this.installDragAndDrop();
         final JScrollPane tableScroll = new JScrollPane(this.table);
         tableScroll.getViewport().setBackground(Color.WHITE);
         tableScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
@@ -383,6 +391,11 @@ public final class FilePanel extends JPanel {
 
     public JTextField getPathField() {
         return this.addressBar.getEditor();
+    }
+
+    public void setDropFilesHandler(final Consumer<List<Path>> handler) {
+        this.dropFilesHandler = handler != null ? handler : paths -> {
+        };
     }
 
     public void setContextMenuHandler(final Consumer<MouseEvent> handler) {
@@ -970,6 +983,106 @@ public final class FilePanel extends JPanel {
                 label.setIcon(null);
             }
             return label;
+        }
+    }
+
+    private void installDragAndDrop() {
+        final TransferHandler handler = new ListingTransferHandler();
+        this.table.setDragEnabled(true);
+        this.table.setDropMode(DropMode.ON);
+        this.table.setTransferHandler(handler);
+        this.iconList.setDragEnabled(true);
+        this.iconList.setDropMode(DropMode.ON);
+        this.iconList.setTransferHandler(handler);
+    }
+
+    /**
+     * Drag selected disk files out; drop files onto disk (copy) or zip (add).
+     */
+    private final class ListingTransferHandler extends TransferHandler {
+        @Override
+        public int getSourceActions(final JComponent c) {
+            if (!FilePanel.this.locationModel.isDisk()) {
+                return NONE;
+            }
+            return COPY_OR_MOVE;
+        }
+
+        @Override
+        protected Transferable createTransferable(final JComponent c) {
+            final List<Path> paths = FilePanel.this.getSelectedDiskPaths();
+            if (paths.isEmpty()) {
+                return null;
+            }
+            final List<File> files = new ArrayList<>(paths.size());
+            for (final Path p : paths) {
+                files.add(p.toFile());
+            }
+            return new FileListTransferable(files);
+        }
+
+        @Override
+        public boolean canImport(final TransferSupport support) {
+            if (!support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                return false;
+            }
+            return FilePanel.this.locationModel.isDisk() || FilePanel.this.locationModel.isZip();
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public boolean importData(final TransferSupport support) {
+            if (!canImport(support)) {
+                return false;
+            }
+            try {
+                final List<File> files = (List<File>) support.getTransferable()
+                        .getTransferData(DataFlavor.javaFileListFlavor);
+                if (files == null || files.isEmpty()) {
+                    return false;
+                }
+                final List<Path> paths = new ArrayList<>(files.size());
+                for (final File f : files) {
+                    if (f != null) {
+                        paths.add(f.toPath());
+                    }
+                }
+                if (paths.isEmpty()) {
+                    return false;
+                }
+                FilePanel.this.fireActivated();
+                FilePanel.this.dropFilesHandler.accept(List.copyOf(paths));
+                return true;
+            } catch (final UnsupportedFlavorException | IOException ex) {
+                log.debug("Drop import failed: {}", ex.toString());
+                return false;
+            }
+        }
+    }
+
+    private static final class FileListTransferable implements Transferable {
+        private final List<File> files;
+
+        FileListTransferable(final List<File> files) {
+            this.files = List.copyOf(files);
+        }
+
+        @Override
+        public DataFlavor[] getTransferDataFlavors() {
+            return new DataFlavor[]{DataFlavor.javaFileListFlavor};
+        }
+
+        @Override
+        public boolean isDataFlavorSupported(final DataFlavor flavor) {
+            return DataFlavor.javaFileListFlavor.equals(flavor);
+        }
+
+        @Override
+        public Object getTransferData(final DataFlavor flavor) throws UnsupportedFlavorException {
+            if (!isDataFlavorSupported(flavor)) {
+                throw new UnsupportedFlavorException(flavor);
+            }
+            return this.files;
         }
     }
 

@@ -1,6 +1,7 @@
 package com.sysbot32.whistler.file_manager.archive;
 
 import com.sysbot32.whistler.file_manager.model.FileEntry;
+import com.sysbot32.whistler.file_manager.ops.ExtractCollisionAsk;
 import com.sysbot32.whistler.file_manager.ops.TransferControl;
 
 import java.io.IOException;
@@ -63,6 +64,18 @@ public interface ArchiveOperations {
             boolean extractAll,
             TransferControl control,
             ArchiveExtractOptions options
+    ) throws IOException {
+        return extract(archive, internalPaths, destDir, extractAll, control, options, null);
+    }
+
+    default int extract(
+            Path archive,
+            List<String> internalPaths,
+            Path destDir,
+            boolean extractAll,
+            TransferControl control,
+            ArchiveExtractOptions options,
+            ExtractCollisionAsk ask
     ) throws IOException {
         return extract(archive, internalPaths, destDir, extractAll, control);
     }

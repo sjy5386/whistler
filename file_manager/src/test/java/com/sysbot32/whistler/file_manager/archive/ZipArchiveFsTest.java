@@ -2,6 +2,7 @@ package com.sysbot32.whistler.file_manager.archive;
 
 import com.sysbot32.whistler.file_manager.model.BrowseLocation;
 import com.sysbot32.whistler.file_manager.model.FileEntry;
+import com.sysbot32.whistler.file_manager.ops.CollisionPolicy;
 import com.sysbot32.whistler.file_manager.ops.TransferControl;
 import com.sysbot32.whistler.file_manager.ops.TransferTargets;
 
@@ -270,6 +271,50 @@ class ZipArchiveFsTest {
         assertEquals(1, count);
         assertEquals("hi", Files.readString(out.resolve("readme.txt")));
         assertTrue(Files.notExists(out.resolve("onlyroot/readme.txt")));
+    }
+
+    @Test
+    void extractAskSkipLeavesOld() throws Exception {
+        final Path a = this.tempDir.resolve("a.txt");
+        Files.writeString(a, "NEW");
+        final Path zip = this.tempDir.resolve("ask.zip");
+        ZipArchiveFs.createZip(zip, List.of(a));
+
+        final Path out = Files.createDirectory(this.tempDir.resolve("ask-out"));
+        Files.writeString(out.resolve("a.txt"), "OLD");
+        final ArchiveExtractOptions opts = new ArchiveExtractOptions(
+                ArchiveExtractOptions.PathMode.FULL_PATHNAMES,
+                ArchiveExtractOptions.OverwriteMode.ASK,
+                false
+        );
+        final int count = ZipArchiveFs.extract(
+                zip, List.of(), out, true, null, opts,
+                (target, entry) -> CollisionPolicy.UserChoice.SKIP
+        );
+        assertEquals(0, count);
+        assertEquals("OLD", Files.readString(out.resolve("a.txt")));
+    }
+
+    @Test
+    void extractAskOverwriteAllReplaces() throws Exception {
+        final Path a = this.tempDir.resolve("a.txt");
+        Files.writeString(a, "NEW");
+        final Path zip = this.tempDir.resolve("ask2.zip");
+        ZipArchiveFs.createZip(zip, List.of(a));
+
+        final Path out = Files.createDirectory(this.tempDir.resolve("ask2-out"));
+        Files.writeString(out.resolve("a.txt"), "OLD");
+        final ArchiveExtractOptions opts = new ArchiveExtractOptions(
+                ArchiveExtractOptions.PathMode.FULL_PATHNAMES,
+                ArchiveExtractOptions.OverwriteMode.ASK,
+                false
+        );
+        final int count = ZipArchiveFs.extract(
+                zip, List.of(), out, true, null, opts,
+                (target, entry) -> CollisionPolicy.UserChoice.OVERWRITE_ALL
+        );
+        assertEquals(1, count);
+        assertEquals("NEW", Files.readString(out.resolve("a.txt")));
     }
 
     @Test

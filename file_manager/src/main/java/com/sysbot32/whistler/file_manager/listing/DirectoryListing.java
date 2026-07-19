@@ -156,13 +156,12 @@ public final class DirectoryListing {
         return "A";
     }
 
+    /**
+     * Whether {@code path} is a regular file that a registered archive backend can open.
+     * Delegates to {@link com.sysbot32.whistler.file_manager.archive.Archives#isOpenableArchive}
+     * so UI checks stay aligned with {@link com.sysbot32.whistler.file_manager.archive.ArchiveOperations#supports}.
+     */
     public static boolean looksLikeZip(final Path path) {
-        if (path == null || !Files.isRegularFile(path)) {
-            return false;
-        }
-        final String name = path.getFileName() != null
-                ? path.getFileName().toString().toLowerCase(Locale.ROOT)
-                : "";
-        return name.endsWith(".zip");
+        return com.sysbot32.whistler.file_manager.archive.Archives.isOpenableArchive(path);
     }
 }

@@ -29,7 +29,7 @@ public final class ExtractDialog extends JDialog {
         Objects.requireNonNull(defaultDest, "defaultDest");
         this.destField.setText(defaultDest.toAbsolutePath().normalize().toString());
         this.pathModeBox.setSelectedItem(PathModeItem.FULL);
-        this.overwriteBox.setSelectedItem(OverwriteItem.OVERWRITE);
+        this.overwriteBox.setSelectedItem(OverwriteItem.ASK);
 
         final JPanel root = new JPanel(new BorderLayout(8, 8));
         root.setBorder(BorderFactory.createEmptyBorder(12, 14, 10, 14));
@@ -123,7 +123,7 @@ public final class ExtractDialog extends JDialog {
 
                         · Extract to: destination folder (created if missing)
                         · Path mode: keep archive paths or flatten to file names
-                        · Overwrite mode: replace, skip, or auto-rename collisions
+                        · Overwrite mode: ask, replace, skip, or auto-rename collisions
                         · Eliminate duplication of root folder: strip a single top-level folder
 
                         Only the Zip backend is available in this build.""",
@@ -173,7 +173,7 @@ public final class ExtractDialog extends JDialog {
         final OverwriteItem overwrite = (OverwriteItem) this.overwriteBox.getSelectedItem();
         final ArchiveExtractOptions options = new ArchiveExtractOptions(
                 pathMode == null ? ArchiveExtractOptions.PathMode.FULL_PATHNAMES : pathMode.mode,
-                overwrite == null ? ArchiveExtractOptions.OverwriteMode.OVERWRITE : overwrite.mode,
+                overwrite == null ? ArchiveExtractOptions.OverwriteMode.ASK : overwrite.mode,
                 this.eliminateRoot.isSelected()
         );
         this.result = new Result(dest, options);
@@ -199,6 +199,7 @@ public final class ExtractDialog extends JDialog {
     }
 
     private enum OverwriteItem {
+        ASK("Ask before overwrite", ArchiveExtractOptions.OverwriteMode.ASK),
         OVERWRITE("Overwrite without prompt", ArchiveExtractOptions.OverwriteMode.OVERWRITE),
         SKIP("Skip existing files", ArchiveExtractOptions.OverwriteMode.SKIP),
         AUTO_RENAME("Auto rename", ArchiveExtractOptions.OverwriteMode.AUTO_RENAME);

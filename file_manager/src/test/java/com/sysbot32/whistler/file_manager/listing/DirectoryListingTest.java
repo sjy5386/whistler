@@ -39,6 +39,12 @@ class DirectoryListingTest {
         Files.writeString(zip, "not really");
         assertTrue(DirectoryListing.looksLikeZip(zip));
         assertFalse(DirectoryListing.looksLikeZip(this.tempDir.resolve("a.txt")));
+        // Aligned with ZipArchiveOperations.supports — jar/war count as openable archives
+        final Path jar = Files.writeString(this.tempDir.resolve("lib.jar"), "pk");
+        final Path war = Files.writeString(this.tempDir.resolve("app.war"), "pk");
+        assertTrue(DirectoryListing.looksLikeZip(jar));
+        assertTrue(DirectoryListing.looksLikeZip(war));
+        assertFalse(DirectoryListing.looksLikeZip(this.tempDir)); // directory
     }
 
     @Test

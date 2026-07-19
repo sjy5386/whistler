@@ -84,6 +84,8 @@ public final class FileManagerFrame extends JFrame {
         this.rightPanel.setNavigationListener(this::onPanelNavigated);
         this.leftPanel.setContextMenuHandler(this::showListingContextMenu);
         this.rightPanel.setContextMenuHandler(this::showListingContextMenu);
+        this.leftPanel.setDropFilesHandler(paths -> handleFilesDropped(this.leftPanel, paths));
+        this.rightPanel.setDropFilesHandler(paths -> handleFilesDropped(this.rightPanel, paths));
         // Tab switches panels (7zFM); disable default focus traversal on panel controls
         this.leftPanel.getTable().setFocusTraversalKeysEnabled(false);
         this.rightPanel.getTable().setFocusTraversalKeysEnabled(false);
@@ -857,11 +859,74 @@ public final class FileManagerFrame extends JFrame {
 
     private void handleTransferError(final String title, final Exception ex) {
         final Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-        if (cause instanceof CancellationException || (ex.getMessage() != null && ex.getMessage().contains("Cancelled"))) {
+        if (cause instanceof CancellationException
+                || (ex.getMessage() != null && ex.getMessage().contains("Cancelled"))
+                || (cause.getMessage() != null && cause.getMessage().contains("cancelled"))) {
             setStatus("Cancelled");
             return;
         }
         showError(title, ex);
+    }
+
+    /**
+     * Drag-and-drop onto a panel: copy into a disk folder, or add into the open zip.
+     */
+    private void handleFilesDropped(final FilePanel panel, final List<Path> paths) {
+        if (panel == null || paths == null || paths.isEmpty()) {
+            return;
+        }
+        final BrowseLocation loc = panel.getLocationModel();
+        final List<Path> existing = paths.stream().filter(Files::exists).toList();
+        if (existing.isEmpty()) {
+            setStatus("Dropped paths not found");
+            return;
+        }
+        if (loc.isDisk()) {
+            final Path destDir = loc.path();
+            // Skip no-op drops onto the same directory
+            final List<Path> toCopy = existing.stream()
+                    .filter(p -> {
+                        final Path parent = p.getParent();
+                        return parent == null || !parent.toAbsolutePath().normalize()
+                                .equals(destDir.toAbsolutePath().normalize());
+                    })
+                    .toList();
+            if (toCopy.isEmpty()) {
+                setStatus("Already in this folder");
+                return;
+            }
+            final TransferControl control = new TransferControl();
+            final FileOperations.CollisionAsk ask = (src, target) -> {
+                final CollisionPolicy.UserChoice[] box = new CollisionPolicy.UserChoice[1];
+                try {
+                    SwingUtilities.invokeAndWait(() -> box[0] = promptCollision(src, target, false));
+                } catch (final Exception ex) {
+                    box[0] = CollisionPolicy.UserChoice.CANCEL;
+                }
+                return box[0] == null ? CollisionPolicy.UserChoice.CANCEL : box[0];
+            };
+            setStatus("Copying dropped files…");
+            ProgressTasks.run(
+                    this,
+                    "Copy",
+                    control,
+                    () -> {
+                        FileOperations.copy(toCopy, destDir, ask, control);
+                        return toCopy.size();
+                    },
+                    n -> {
+                        setStatus("Copied " + n + " dropped item(s)");
+                        panel.refreshAsync();
+                    },
+                    ex -> handleTransferError("Drop copy failed", ex)
+            );
+            return;
+        }
+        if (loc.isZip()) {
+            runAddToArchive(existing, loc.path(), loc.zipInternalPath(), ArchiveWriteOptions.defaults());
+            return;
+        }
+        setStatus("Cannot drop here");
     }
 
     private void actionDelete() {
@@ -1831,13 +1896,16 @@ public final class FileManagerFrame extends JFrame {
         final boolean all = job.extractAll();
         final FilePanel panel = job.panel();
         final ArchiveExtractOptions opts = options == null ? ArchiveExtractOptions.defaults() : options;
+        final ExtractCollisionAsk ask = opts.overwriteMode() == ArchiveExtractOptions.OverwriteMode.ASK
+                ? this::promptExtractCollision
+                : null;
         final TransferControl control = new TransferControl();
         setStatus("Extracting…");
         ProgressTasks.run(
                 this,
                 "Extract",
                 control,
-                () -> Archives.zip().extract(zip, paths, dest, all, control, opts),
+                () -> Archives.zip().extract(zip, paths, dest, all, control, opts, ask),
                 count -> {
                     setStatus("Extracted " + count + " file(s)");
                     if (this.dualPanel) {
@@ -1847,6 +1915,38 @@ public final class FileManagerFrame extends JFrame {
                 },
                 ex -> handleTransferError("Extract failed", ex)
         );
+    }
+
+    private CollisionPolicy.UserChoice promptExtractCollision(final Path target, final String entryName) {
+        final CollisionPolicy.UserChoice[] box = new CollisionPolicy.UserChoice[1];
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                final Object[] options = {
+                        "Overwrite", "Overwrite All", "Skip", "Skip All", "Cancel"
+                };
+                final int result = JOptionPane.showOptionDialog(
+                        this,
+                        "Extract:\n" + entryName + "\n\nTarget already exists:\n" + target
+                                + "\n\nWhat should we do?",
+                        "Name collision",
+                        JOptionPane.DEFAULT_OPTION,
+                        JOptionPane.QUESTION_MESSAGE,
+                        null,
+                        options,
+                        options[0]
+                );
+                box[0] = switch (result) {
+                    case 0 -> CollisionPolicy.UserChoice.OVERWRITE;
+                    case 1 -> CollisionPolicy.UserChoice.OVERWRITE_ALL;
+                    case 2 -> CollisionPolicy.UserChoice.SKIP;
+                    case 3 -> CollisionPolicy.UserChoice.SKIP_ALL;
+                    default -> CollisionPolicy.UserChoice.CANCEL;
+                };
+            });
+        } catch (final Exception ex) {
+            box[0] = CollisionPolicy.UserChoice.CANCEL;
+        }
+        return box[0] == null ? CollisionPolicy.UserChoice.CANCEL : box[0];
     }
 
     private void actionTest() {
@@ -1952,6 +2052,9 @@ public final class FileManagerFrame extends JFrame {
         final Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
         log.warn("{}: {}", title, cause.getMessage(), cause);
         setStatus("Error: " + cause.getMessage());
+        if (AccessCoaching.showIfAccessDenied(this, title, cause)) {
+            return;
+        }
         JOptionPane.showMessageDialog(this, cause.getMessage(), title, JOptionPane.ERROR_MESSAGE);
     }
 
