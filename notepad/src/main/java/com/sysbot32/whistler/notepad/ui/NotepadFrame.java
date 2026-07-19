@@ -1,6 +1,11 @@
-package com.sysbot32.whistler.notepad;
+package com.sysbot32.whistler.notepad.ui;
 
 import com.sysbot32.whistler.config.Config;
+import com.sysbot32.whistler.notepad.model.FindQuery;
+import com.sysbot32.whistler.notepad.model.HeaderFooter;
+import com.sysbot32.whistler.notepad.model.LineColumn;
+import com.sysbot32.whistler.notepad.model.Notepad;
+import com.sysbot32.whistler.notepad.model.SearchDirection;
 import say.swing.JFontChooser;
 
 import javax.swing.*;

@@ -2,6 +2,8 @@ package com.sysbot32.whistler.notepad;
 
 import com.sysbot32.whistler.config.Config;
 import com.sysbot32.whistler.config.PropertiesConfig;
+import com.sysbot32.whistler.notepad.model.Notepad;
+import com.sysbot32.whistler.notepad.ui.NotepadFrame;
 
 import javax.swing.*;
 import java.nio.file.Path;

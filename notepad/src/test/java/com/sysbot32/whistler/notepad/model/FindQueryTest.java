@@ -1,5 +1,6 @@
-package com.sysbot32.whistler.notepad;
+package com.sysbot32.whistler.notepad.model;
 
+import com.sysbot32.whistler.notepad.ui.FindDialog;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

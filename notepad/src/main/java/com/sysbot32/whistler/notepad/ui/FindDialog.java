@@ -1,4 +1,6 @@
-package com.sysbot32.whistler.notepad;
+package com.sysbot32.whistler.notepad.ui;
+
+import com.sysbot32.whistler.notepad.model.SearchDirection;
 
 import javax.swing.*;
 import java.awt.*;

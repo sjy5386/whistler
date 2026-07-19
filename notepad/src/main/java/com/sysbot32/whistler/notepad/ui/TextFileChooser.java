@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.notepad;
+package com.sysbot32.whistler.notepad.ui;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
