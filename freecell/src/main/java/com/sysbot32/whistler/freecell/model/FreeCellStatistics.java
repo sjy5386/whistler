@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.model;
 
 import com.sysbot32.whistler.config.Config;
 import lombok.Getter;

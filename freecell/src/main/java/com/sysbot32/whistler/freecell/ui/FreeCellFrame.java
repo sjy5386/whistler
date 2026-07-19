@@ -1,4 +1,15 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.ui;
+
+import com.sysbot32.whistler.freecell.card.Card;
+import com.sysbot32.whistler.freecell.card.Rank;
+import com.sysbot32.whistler.freecell.card.Suit;
+import com.sysbot32.whistler.freecell.model.FreeCellGame;
+import com.sysbot32.whistler.freecell.model.FreeCellOptions;
+import com.sysbot32.whistler.freecell.model.FreeCellStatistics;
+import com.sysbot32.whistler.freecell.model.Move;
+import com.sysbot32.whistler.freecell.model.NumberedDeal;
+import com.sysbot32.whistler.freecell.model.PileRef;
+import com.sysbot32.whistler.freecell.model.PileType;
 
 import com.sysbot32.whistler.config.Config;
 

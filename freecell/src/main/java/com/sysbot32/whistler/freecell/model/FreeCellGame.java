@@ -1,4 +1,8 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.model;
+
+import com.sysbot32.whistler.freecell.card.Card;
+import com.sysbot32.whistler.freecell.card.Rank;
+import com.sysbot32.whistler.freecell.card.Suit;
 
 import lombok.Getter;
 

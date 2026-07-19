@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.freecell;
 
+import com.sysbot32.whistler.freecell.ui.FreeCellFrame;
+
 import com.sysbot32.whistler.config.Config;
 import com.sysbot32.whistler.config.PropertiesConfig;
 

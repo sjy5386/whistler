@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.card;
 
 import java.util.ArrayList;
 import java.util.Collections;

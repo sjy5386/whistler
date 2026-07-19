@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.model;
 
 import lombok.EqualsAndHashCode;
 import lombok.Getter;

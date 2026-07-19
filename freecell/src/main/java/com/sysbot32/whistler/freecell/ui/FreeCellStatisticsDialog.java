@@ -1,4 +1,6 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.ui;
+
+import com.sysbot32.whistler.freecell.model.FreeCellStatistics;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;

@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell;
+package com.sysbot32.whistler.freecell.card;
 
 import org.junit.jupiter.api.Test;
 
