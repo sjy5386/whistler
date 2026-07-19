@@ -1,4 +1,6 @@
-package com.sysbot32.whistler.minesweeper;
+package com.sysbot32.whistler.minesweeper.ui;
+
+import com.sysbot32.whistler.minesweeper.model.BoardSpec;
 
 import javax.swing.*;
 import java.awt.*;

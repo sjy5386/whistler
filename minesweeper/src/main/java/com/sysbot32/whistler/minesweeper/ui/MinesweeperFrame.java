@@ -1,4 +1,12 @@
-package com.sysbot32.whistler.minesweeper;
+package com.sysbot32.whistler.minesweeper.ui;
+
+import com.sysbot32.whistler.minesweeper.model.BestTimes;
+import com.sysbot32.whistler.minesweeper.model.BoardMouseController;
+import com.sysbot32.whistler.minesweeper.model.BoardSpec;
+import com.sysbot32.whistler.minesweeper.model.Cell;
+import com.sysbot32.whistler.minesweeper.model.Difficulty;
+import com.sysbot32.whistler.minesweeper.model.GameStatus;
+import com.sysbot32.whistler.minesweeper.model.Minesweeper;
 
 import com.sysbot32.whistler.config.Config;
 

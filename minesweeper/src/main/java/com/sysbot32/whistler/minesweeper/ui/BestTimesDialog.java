@@ -1,4 +1,7 @@
-package com.sysbot32.whistler.minesweeper;
+package com.sysbot32.whistler.minesweeper.ui;
+
+import com.sysbot32.whistler.minesweeper.model.BestTimes;
+import com.sysbot32.whistler.minesweeper.model.Difficulty;
 
 import javax.swing.*;
 import java.awt.*;

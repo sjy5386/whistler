@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.minesweeper;
+package com.sysbot32.whistler.minesweeper.ui;
 
 import javax.swing.*;
 import java.awt.*;

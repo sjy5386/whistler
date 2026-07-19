@@ -1,17 +1,17 @@
-package com.sysbot32.whistler.minesweeper;
+package com.sysbot32.whistler.minesweeper.model;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.ActionType.CHORD;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.ActionType.FLAG;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.ActionType.NONE;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.ActionType.OPEN;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.Button.LEFT;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.Button.MIDDLE;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.Button.RIGHT;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.PreviewMode.CELL;
-import static com.sysbot32.whistler.minesweeper.BoardMouseController.PreviewMode.CHORD_NEIGHBORS;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.ActionType.CHORD;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.ActionType.FLAG;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.ActionType.NONE;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.ActionType.OPEN;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.Button.LEFT;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.Button.MIDDLE;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.Button.RIGHT;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.PreviewMode.CELL;
+import static com.sysbot32.whistler.minesweeper.model.BoardMouseController.PreviewMode.CHORD_NEIGHBORS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

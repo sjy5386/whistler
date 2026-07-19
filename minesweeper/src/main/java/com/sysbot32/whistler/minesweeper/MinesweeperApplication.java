@@ -1,5 +1,7 @@
 package com.sysbot32.whistler.minesweeper;
 
+import com.sysbot32.whistler.minesweeper.ui.MinesweeperFrame;
+
 import com.sysbot32.whistler.config.Config;
 import com.sysbot32.whistler.config.PropertiesConfig;
 

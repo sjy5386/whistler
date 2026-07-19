@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.minesweeper;
+package com.sysbot32.whistler.minesweeper.model;
 
 import com.sysbot32.whistler.config.PropertiesConfig;
 import org.junit.jupiter.api.Test;
