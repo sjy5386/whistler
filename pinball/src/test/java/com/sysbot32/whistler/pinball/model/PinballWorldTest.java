@@ -16,7 +16,19 @@ class PinballWorldTest {
         assertEquals(GameStatus.PLAYING, world.getStatus());
         assertTrue(world.isInPlunger());
         assertFalse(world.isGameOver());
-        assertEquals(3, world.getBumpers().size());
+        assertEquals(4, world.getBumpers().size());
+    }
+
+    @Test
+    void tableExposesSpaceCadetFeatures() {
+        final PinballWorld world = new PinballWorld();
+        assertEquals(4, world.getBumpers().size());
+        assertEquals(TableFeature.Kind.LAUNCH_RAMP, world.getLaunchRamp().getKind());
+        assertEquals(2, world.getReentryLanes().size());
+        assertEquals(TableFeature.Kind.CENTER_MEDAL, world.getCenterMedal().getKind());
+        assertEquals(3, world.getWormholes().size());
+        assertEquals(TableFeature.Kind.HYPERSPACE, world.getHyperspace().getKind());
+        assertEquals(3, world.getMissionTargets().size());
     }
 
     @Test

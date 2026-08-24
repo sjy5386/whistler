@@ -22,7 +22,7 @@ import java.util.Objects;
  * left/right flippers and the plunger.
  */
 public final class PinballFrame extends JFrame {
-    public static final String TITLE = "3D Pinball";
+    public static final String TITLE = "3D Pinball: Space Cadet";
     private static final int TICK_MS = 16;
     private static final double DT = TICK_MS / 1000.0;
 
@@ -145,10 +145,13 @@ public final class PinballFrame extends JFrame {
 
         final JMenu helpMenu = new JMenu("Help");
         helpMenu.setMnemonic(KeyEvent.VK_H);
-        final JMenuItem aboutItem = new JMenuItem("About 3D Pinball...", KeyEvent.VK_A);
+        final JMenuItem aboutItem = new JMenuItem("About Space Cadet...", KeyEvent.VK_A);
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
                 this,
-                TITLE + "\nWhistler — classic 3D pinball table\n\n"
+                TITLE + "\nWhistler — Windows XP 3D Pinball homage\n\n"
+                        + "Hit the three mission targets, then the launch ramp\n"
+                        + "to start Target Practice. Attack bumpers complete the\n"
+                        + "mission; fuel runs out if you take too long.\n\n"
                         + "Left flipper: Z, Left Arrow, Left Shift\n"
                         + "Right flipper: /, Right Arrow, Right Shift\n"
                         + "Plunger: hold Space, Down, or Enter, then release\n"

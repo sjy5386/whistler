@@ -42,8 +42,18 @@ public final class PinballWorld {
     private static final double PLUNGER_REST_Y = 14.0;
     private static final double PLUNGER_DRAW = 16.0;
 
+    public static final String STATUS_AWAITING = "Awaiting Deployment";
+    public static final String STATUS_TARGET_PRACTICE = "Target Practice";
+    public static final String STATUS_MISSION_COMPLETE = "Mission Complete";
+    public static final String STATUS_OUT_OF_FUEL = "Out of Fuel";
+    public static final double FUEL_MAX = 100.0;
+    public static final double FUEL_BURN_PER_SECOND = 20.0;
+    public static final int TARGET_PRACTICE_HITS = 8;
+    public static final int MISSION_TARGETS_TO_ARM = 3;
+
     private final List<Wall> walls;
     private final List<Bumper> bumpers;
+    private final List<TableFeature> features;
     private final Flipper leftFlipper;
     private final Flipper rightFlipper;
 
@@ -59,9 +69,17 @@ public final class PinballWorld {
     private double plungerPull;
     private boolean inPlunger;
 
+    private Rank rank;
+    private Mission mission;
+    private String statusLine;
+    private double fuel;
+    private int practiceHits;
+    private int missionsCompleted;
+
     public PinballWorld() {
         this.walls = new ArrayList<>();
         this.bumpers = new ArrayList<>();
+        this.features = new ArrayList<>();
         final double leftRest = Math.toRadians(-24.0);
         final double leftRaised = Math.toRadians(52.0);
         this.leftFlipper = new Flipper(
@@ -92,6 +110,55 @@ public final class PinballWorld {
         return Collections.unmodifiableList(this.bumpers);
     }
 
+    public List<TableFeature> getFeatures() {
+        return Collections.unmodifiableList(this.features);
+    }
+
+    public List<TableFeature> featuresOf(final TableFeature.Kind kind) {
+        final List<TableFeature> matched = new ArrayList<>();
+        for (final TableFeature feature : this.features) {
+            if (feature.getKind() == kind) {
+                matched.add(feature);
+            }
+        }
+        return Collections.unmodifiableList(matched);
+    }
+
+    public TableFeature getLaunchRamp() {
+        return this.featuresOf(TableFeature.Kind.LAUNCH_RAMP).getFirst();
+    }
+
+    public TableFeature getCenterMedal() {
+        return this.featuresOf(TableFeature.Kind.CENTER_MEDAL).getFirst();
+    }
+
+    public TableFeature getHyperspace() {
+        return this.featuresOf(TableFeature.Kind.HYPERSPACE).getFirst();
+    }
+
+    public List<TableFeature> getWormholes() {
+        return this.featuresOf(TableFeature.Kind.WORMHOLE);
+    }
+
+    public List<TableFeature> getReentryLanes() {
+        return this.featuresOf(TableFeature.Kind.REENTRY_LANE);
+    }
+
+    public List<TableFeature> getMissionTargets() {
+        return this.featuresOf(TableFeature.Kind.MISSION_TARGET);
+    }
+
+    public boolean isMissionActive() {
+        return this.mission != Mission.NONE;
+    }
+
+    public int getBallNumber() {
+        if (this.ballsRemaining <= 0) {
+            return STARTING_BALLS;
+        }
+        return STARTING_BALLS - this.ballsRemaining + 1;
+    }
+
     public boolean isGameOver() {
         return this.status == GameStatus.GAME_OVER;
     }
@@ -104,11 +171,20 @@ public final class PinballWorld {
         this.score = 0;
         this.ballsRemaining = STARTING_BALLS;
         this.status = GameStatus.PLAYING;
+        this.rank = Rank.CADET;
+        this.mission = Mission.NONE;
+        this.statusLine = STATUS_AWAITING;
+        this.fuel = 0.0;
+        this.practiceHits = 0;
+        this.missionsCompleted = 0;
         this.leftFlipper.setRaised(false);
         this.rightFlipper.setRaised(false);
         this.leftFlipper.tick(1.0);
         this.rightFlipper.tick(1.0);
         this.clearContacts();
+        for (final TableFeature feature : this.features) {
+            feature.setLit(false);
+        }
         this.serveBall();
     }
 
@@ -174,6 +250,12 @@ public final class PinballWorld {
         if (dt <= 0.0) {
             return;
         }
+        if (this.mission != Mission.NONE) {
+            this.fuel -= FUEL_BURN_PER_SECOND * dt;
+            if (this.fuel <= 0.0) {
+                this.abortMission();
+            }
+        }
         double remaining = dt;
         while (remaining > 1e-12) {
             final double step = Math.min(MAX_STEP, remaining);
@@ -213,6 +295,9 @@ public final class PinballWorld {
         }
         for (final Bumper bumper : this.bumpers) {
             this.collideBumper(bumper);
+        }
+        for (final TableFeature feature : this.features) {
+            this.collideFeature(feature);
         }
         this.collideFlipper(this.leftFlipper);
         this.collideFlipper(this.rightFlipper);
@@ -290,8 +375,164 @@ public final class PinballWorld {
             this.score += BUMPER_SCORE;
             this.ballVx += nx * BUMPER_BOOST;
             this.ballVy += ny * BUMPER_BOOST;
+            if (this.mission == Mission.TARGET_PRACTICE) {
+                this.practiceHits += 1;
+                if (this.practiceHits >= TARGET_PRACTICE_HITS) {
+                    this.completeMission();
+                }
+            }
         }
         bumper.setContacting(true);
+    }
+
+    private void collideFeature(final TableFeature feature) {
+        final double dx = this.ballX - feature.getX();
+        final double dy = this.ballY - feature.getY();
+        final double dist = Math.hypot(dx, dy);
+        final double minDist = this.ballRadius + feature.getRadius();
+        if (dist >= minDist) {
+            feature.setContacting(false);
+            return;
+        }
+        double nx;
+        double ny;
+        if (dist < 1e-9) {
+            nx = 0.0;
+            ny = 1.0;
+        } else {
+            nx = dx / dist;
+            ny = dy / dist;
+        }
+        final boolean entered = !feature.isContacting();
+        feature.setContacting(true);
+
+        switch (feature.getKind()) {
+            case MISSION_TARGET -> {
+                this.separateAndBounce(nx, ny, minDist - dist, 0.35, 40.0);
+                if (entered) {
+                    feature.setLit(true);
+                    this.score += 25;
+                }
+            }
+            case LAUNCH_RAMP -> {
+                this.separateAndBounce(nx, ny, minDist - dist, 0.25, 80.0);
+                if (entered && this.mission == Mission.NONE && this.targetsArmed()) {
+                    this.startTargetPractice();
+                }
+            }
+            case CENTER_MEDAL -> {
+                this.separateAndBounce(nx, ny, minDist - dist, 0.5, 60.0);
+                if (entered) {
+                    this.score += 10;
+                }
+            }
+            case REENTRY_LANE -> {
+                this.separateAndBounce(nx, ny, minDist - dist, 0.4, 90.0);
+                if (entered) {
+                    this.score += 15;
+                }
+            }
+            case HYPERSPACE -> {
+                if (entered) {
+                    this.score += 500;
+                    this.ballX = 100.0;
+                    this.ballY = 210.0;
+                    this.ballVx = -40.0;
+                    this.ballVy = 280.0;
+                    feature.setContacting(true);
+                }
+            }
+            case WORMHOLE -> {
+                if (entered) {
+                    this.teleportWormhole(feature);
+                }
+            }
+        }
+    }
+
+    private void teleportWormhole(final TableFeature from) {
+        final List<TableFeature> holes = this.getWormholes();
+        TableFeature dest = holes.getFirst();
+        for (int i = 0; i < holes.size(); i++) {
+            if (holes.get(i) == from) {
+                dest = holes.get((i + 1) % holes.size());
+                break;
+            }
+        }
+        this.score += 75;
+        this.ballX = dest.getX();
+        this.ballY = dest.getY() - dest.getRadius() - this.ballRadius - 1.0;
+        this.ballVx = 30.0;
+        this.ballVy = -120.0;
+        dest.setContacting(true);
+        from.setContacting(true);
+    }
+
+    private void separateAndBounce(
+            final double nx,
+            final double ny,
+            final double overlap,
+            final double restitution,
+            final double boost
+    ) {
+        this.ballX += nx * overlap;
+        this.ballY += ny * overlap;
+        final double vn = this.ballVx * nx + this.ballVy * ny;
+        if (vn < 0.0) {
+            this.ballVx -= (1.0 + restitution) * vn * nx;
+            this.ballVy -= (1.0 + restitution) * vn * ny;
+        }
+        this.ballVx += nx * boost;
+        this.ballVy += ny * boost;
+    }
+
+    private boolean targetsArmed() {
+        int lit = 0;
+        for (final TableFeature target : this.getMissionTargets()) {
+            if (target.isLit()) {
+                lit += 1;
+            }
+        }
+        return lit >= MISSION_TARGETS_TO_ARM;
+    }
+
+    private void startTargetPractice() {
+        this.mission = Mission.TARGET_PRACTICE;
+        this.statusLine = STATUS_TARGET_PRACTICE;
+        this.fuel = FUEL_MAX;
+        this.practiceHits = 0;
+        for (final TableFeature target : this.features) {
+            if (target.getKind() == TableFeature.Kind.MISSION_TARGET) {
+                target.setLit(false);
+            }
+        }
+        this.score += 200;
+    }
+
+    private void completeMission() {
+        this.mission = Mission.NONE;
+        this.fuel = 0.0;
+        this.practiceHits = 0;
+        this.missionsCompleted += 1;
+        if (this.rank == Rank.CADET) {
+            this.rank = Rank.ENSIGN;
+        } else if (this.rank == Rank.ENSIGN) {
+            this.rank = Rank.LIEUTENANT;
+        }
+        this.statusLine = STATUS_MISSION_COMPLETE;
+        this.score += 1000;
+    }
+
+    private void abortMission() {
+        this.mission = Mission.NONE;
+        this.fuel = 0.0;
+        this.practiceHits = 0;
+        this.statusLine = STATUS_OUT_OF_FUEL;
+        for (final TableFeature target : this.features) {
+            if (target.getKind() == TableFeature.Kind.MISSION_TARGET) {
+                target.setLit(false);
+            }
+        }
     }
 
     private void collideFlipper(final Flipper flipper) {
@@ -422,15 +663,35 @@ public final class PinballWorld {
         this.walls.add(new Wall(0.0, h - 8.0, 28.0, h, e));
         this.walls.add(new Wall(8.0, 210.0, 28.0, 160.0, 0.7));
         this.walls.add(new Wall(LAUNCH_LANE_LEFT - 8.0, 210.0, LAUNCH_LANE_LEFT - 28.0, 160.0, 0.7));
+        this.walls.add(new Wall(14.0, 205.0, 32.0, 330.0, 0.35));
+        this.walls.add(new Wall(48.0, 205.0, 58.0, 330.0, 0.35));
+        this.walls.add(new Wall(8.0, 78.0, 28.0, 118.0, 0.55));
+        this.walls.add(new Wall(LAUNCH_LANE_LEFT - 8.0, 78.0, LAUNCH_LANE_LEFT - 28.0, 118.0, 0.55));
 
-        this.bumpers.add(new Bumper(78.0, 288.0, 12.0));
-        this.bumpers.add(new Bumper(100.0, 318.0, 12.0));
-        this.bumpers.add(new Bumper(122.0, 288.0, 12.0));
+        this.bumpers.add(new Bumper(72.0, 318.0, 11.0));
+        this.bumpers.add(new Bumper(100.0, 348.0, 11.0));
+        this.bumpers.add(new Bumper(128.0, 318.0, 11.0));
+        this.bumpers.add(new Bumper(100.0, 288.0, 11.0));
+
+        this.features.add(new TableFeature(TableFeature.Kind.LAUNCH_RAMP, 34.0, 268.0, 12.0));
+        this.features.add(new TableFeature(TableFeature.Kind.REENTRY_LANE, 24.0, 92.0, 8.0));
+        this.features.add(new TableFeature(TableFeature.Kind.REENTRY_LANE, 154.0, 92.0, 8.0));
+        this.features.add(new TableFeature(TableFeature.Kind.CENTER_MEDAL, 100.0, 172.0, 16.0));
+        this.features.add(new TableFeature(TableFeature.Kind.WORMHOLE, 55.0, 222.0, 8.0));
+        this.features.add(new TableFeature(TableFeature.Kind.WORMHOLE, 100.0, 214.0, 8.0));
+        this.features.add(new TableFeature(TableFeature.Kind.WORMHOLE, 145.0, 222.0, 8.0));
+        this.features.add(new TableFeature(TableFeature.Kind.HYPERSPACE, 158.0, 360.0, 9.0));
+        this.features.add(new TableFeature(TableFeature.Kind.MISSION_TARGET, 18.0, 148.0, 5.5));
+        this.features.add(new TableFeature(TableFeature.Kind.MISSION_TARGET, 18.0, 168.0, 5.5));
+        this.features.add(new TableFeature(TableFeature.Kind.MISSION_TARGET, 18.0, 188.0, 5.5));
     }
 
     private void clearContacts() {
         for (final Bumper bumper : this.bumpers) {
             bumper.setContacting(false);
+        }
+        for (final TableFeature feature : this.features) {
+            feature.setContacting(false);
         }
         this.leftFlipper.setContacting(false);
         this.rightFlipper.setContacting(false);
