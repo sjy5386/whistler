@@ -3,12 +3,15 @@ package com.sysbot32.whistler.solitaire.ui;
 import com.sysbot32.whistler.card.Card;
 import com.sysbot32.whistler.solitaire.model.PileRef;
 import com.sysbot32.whistler.solitaire.model.PileType;
+import com.sysbot32.whistler.solitaire.model.ScoringMode;
 import com.sysbot32.whistler.solitaire.model.SolitaireGame;
+import com.sysbot32.whistler.solitaire.model.SolitaireOptions;
 import com.sysbot32.whistler.solitaire.model.TableauCard;
 
 import com.sysbot32.whistler.config.Config;
 
 import javax.swing.*;
+import javax.swing.border.BevelBorder;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.KeyEvent;
@@ -16,6 +19,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,8 +34,6 @@ public class SolitaireFrame extends JFrame {
     private static final Color CARD_FACE = new Color(0xFF, 0xFF, 0xF0);
     private static final Color CARD_SELECTED = new Color(0xFF, 0xFF, 0x99);
     private static final Color CARD_BORDER = new Color(0x20, 0x20, 0x20);
-    private static final Color CARD_BACK = new Color(0x1A, 0x3A, 0x8A);
-    private static final Color CARD_BACK_PATTERN = new Color(0xC8, 0xD4, 0xF0);
     private static final Color EMPTY_SLOT = new Color(0x00, 0x6B, 0x00);
     private static final Color RED_INK = new Color(0xC0, 0x00, 0x00);
     private static final Color BLACK_INK = new Color(0x10, 0x10, 0x10);
@@ -42,21 +44,28 @@ public class SolitaireFrame extends JFrame {
     static final int FACE_UP_OVERLAP = 24;
     static final int FACE_DOWN_OVERLAP = 12;
     static final int TOP_ROW_GAP = 28;
+    static final int WASTE_FAN = 16;
 
-    @SuppressWarnings("unused") // sibling apps persist window prefs through Config
-    private final Config config;
+    private final SolitaireOptions options;
     private SolitaireGame game;
 
     private final BoardPanel boardPanel = new BoardPanel();
-    private final JLabel statusLabel = new JLabel(" ");
+    private final JPanel statusBar = new JPanel(new BorderLayout());
+    private final JLabel scoreLabel = new JLabel("Score: 0");
+    private final JLabel timeLabel = new JLabel("Time: 0");
 
     private Selection selection;
     private boolean winDialogShown;
+    private int elapsedSeconds;
+    private boolean timerRunning;
+    private final Timer clock;
+    private JMenuItem undoItem;
 
     public SolitaireFrame(final Config config) {
         super(TITLE);
-        this.config = Objects.requireNonNull(config, "config");
-        this.game = new SolitaireGame();
+        this.options = new SolitaireOptions(Objects.requireNonNull(config, "config"));
+        this.game = new SolitaireGame(this.options);
+        this.clock = new Timer(1000, e -> this.tickClock());
 
         this.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         this.getContentPane().setBackground(FELT_GREEN);
@@ -67,16 +76,27 @@ public class SolitaireFrame extends JFrame {
         this.boardPanel.setBorder(new EmptyBorder(12, 12, 8, 12));
         this.add(this.boardPanel, BorderLayout.CENTER);
 
-        this.statusLabel.setBorder(new EmptyBorder(0, 12, 8, 12));
-        this.statusLabel.setForeground(Color.WHITE);
-        this.statusLabel.setOpaque(true);
-        this.statusLabel.setBackground(FELT_GREEN);
-        this.add(this.statusLabel, BorderLayout.SOUTH);
+        this.statusBar.setBorder(new BevelBorder(BevelBorder.LOWERED));
+        this.statusBar.setBackground(new Color(0xC0, 0xC0, 0xC0));
+        this.scoreLabel.setBorder(new EmptyBorder(2, 8, 2, 8));
+        this.timeLabel.setBorder(new EmptyBorder(2, 8, 2, 8));
+        this.statusBar.add(this.scoreLabel, BorderLayout.WEST);
+        this.statusBar.add(this.timeLabel, BorderLayout.EAST);
+        this.add(this.statusBar, BorderLayout.SOUTH);
 
         this.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(final WindowEvent e) {
                 SolitaireFrame.this.exit();
+            }
+        });
+
+        this.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "stopWin");
+        this.getRootPane().getActionMap().put("stopWin", new AbstractAction() {
+            @Override
+            public void actionPerformed(final java.awt.event.ActionEvent e) {
+                SolitaireFrame.this.boardPanel.stopWinAnimation();
             }
         });
 
@@ -96,14 +116,27 @@ public class SolitaireFrame extends JFrame {
         final JMenu gameMenu = new JMenu("Game");
         gameMenu.setMnemonic(KeyEvent.VK_G);
 
-        final JMenuItem newItem = new JMenuItem("New Game", KeyEvent.VK_N);
-        newItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
-        newItem.addActionListener(e -> this.newGame());
+        final JMenuItem dealItem = new JMenuItem("Deal", KeyEvent.VK_D);
+        dealItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0));
+        dealItem.addActionListener(e -> this.newGame());
+
+        this.undoItem = new JMenuItem("Undo", KeyEvent.VK_U);
+        this.undoItem.addActionListener(e -> this.undo());
+
+        final JMenuItem deckItem = new JMenuItem("Deck...", KeyEvent.VK_K);
+        deckItem.addActionListener(e -> this.chooseDeck());
+
+        final JMenuItem optionsItem = new JMenuItem("Options...", KeyEvent.VK_O);
+        optionsItem.addActionListener(e -> this.showOptions());
 
         final JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
         exitItem.addActionListener(e -> this.exit());
 
-        gameMenu.add(newItem);
+        gameMenu.add(dealItem);
+        gameMenu.addSeparator();
+        gameMenu.add(this.undoItem);
+        gameMenu.add(deckItem);
+        gameMenu.add(optionsItem);
         gameMenu.addSeparator();
         gameMenu.add(exitItem);
 
@@ -112,14 +145,9 @@ public class SolitaireFrame extends JFrame {
         final JMenuItem aboutItem = new JMenuItem("About Solitaire...", KeyEvent.VK_A);
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
                 this,
-                "Solitaire (Klondike)\nWhistler — Windows XP classic reimplementation\n\n"
-                        + "Tableau builds down by alternating colors.\n"
-                        + "Foundations build Ace through King by suit.\n"
-                        + "Empty tableau spaces accept Kings only.\n"
-                        + "Click the stock to draw; click again when empty to recycle the waste.\n"
-                        + "Click a card, then click a destination — or drag.\n"
-                        + "Double-click sends a card to its foundation.\n"
-                        + "F2: new game",
+                "Solitaire\nDeveloped for Microsoft by Wes Cherry\n\n"
+                        + "Whistler — Windows XP classic reimplementation\n"
+                        + "F2: Deal",
                 "About Solitaire",
                 JOptionPane.INFORMATION_MESSAGE
         ));
@@ -131,42 +159,114 @@ public class SolitaireFrame extends JFrame {
     }
 
     private void newGame() {
-        this.game = new SolitaireGame();
+        this.persistVegasBank();
+        this.boardPanel.stopWinAnimation();
+        this.game = new SolitaireGame(this.options);
         this.selection = null;
         this.winDialogShown = false;
+        this.elapsedSeconds = 0;
+        this.timerRunning = false;
+        this.clock.stop();
         this.refreshStatus();
         this.boardPanel.repaint();
     }
 
+    private void undo() {
+        if (this.boardPanel.winAnimating) {
+            return;
+        }
+        if (this.game.undo()) {
+            this.selection = null;
+            this.refreshStatus();
+            this.boardPanel.repaint();
+        }
+    }
+
+    private void chooseDeck() {
+        final int picked = SolitaireDeckDialog.show(this, this.options.getDeckBack());
+        if (picked >= 0) {
+            this.options.setDeckBack(picked);
+            this.boardPanel.repaint();
+        }
+    }
+
+    private void showOptions() {
+        final boolean redeal = SolitaireOptionsDialog.show(this, this.options);
+        this.refreshStatus();
+        if (redeal) {
+            final int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    "Deal Again?",
+                    TITLE,
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE
+            );
+            if (choice == JOptionPane.YES_OPTION) {
+                this.newGame();
+                return;
+            }
+        }
+        this.boardPanel.repaint();
+    }
+
+    private void persistVegasBank() {
+        if (this.options.getScoring() == ScoringMode.VEGAS && this.options.isKeepScore()) {
+            this.options.setVegasBank(this.game.getScore());
+        }
+    }
+
     private void exit() {
+        this.persistVegasBank();
         this.dispose();
         System.exit(0);
     }
 
-    private void refreshStatus() {
-        if (this.game.isWon()) {
-            this.statusLabel.setText("You win!  Moves: " + this.game.getMoveCount());
-            this.setTitle(TITLE + " — Won");
-        } else {
-            this.statusLabel.setText("Moves: " + this.game.getMoveCount()
-                    + "    Stock: " + this.game.getStock().size()
-                    + "    Waste: " + this.game.getWaste().size());
-            this.setTitle(TITLE);
+    private void noteAction() {
+        if (this.options.isTimed() && !this.timerRunning && !this.game.isWon()) {
+            this.timerRunning = true;
+            this.clock.start();
         }
+    }
+
+    private void tickClock() {
+        if (!this.timerRunning || this.game.isWon()) {
+            return;
+        }
+        this.elapsedSeconds++;
+        if (this.elapsedSeconds % 10 == 0) {
+            this.game.applyTimePenalty();
+        }
+        this.refreshStatus();
+    }
+
+    private void refreshStatus() {
+        this.statusBar.setVisible(this.options.isStatusBar());
+        final String scoreText = this.options.getScoring() == ScoringMode.NONE
+                ? " "
+                : "Score: " + this.game.getScore();
+        this.scoreLabel.setText(scoreText);
+        this.timeLabel.setText(this.options.isTimed() ? "Time: " + this.elapsedSeconds : " ");
+        if (this.undoItem != null) {
+            this.undoItem.setEnabled(this.game.canUndo() && !this.boardPanel.winAnimating);
+        }
+        this.setTitle(this.game.isWon() ? TITLE + " — Won" : TITLE);
     }
 
     private void afterTurn() {
         this.selection = null;
+        this.noteAction();
         this.refreshStatus();
         this.boardPanel.repaint();
         if (this.game.isWon() && !this.winDialogShown) {
             this.winDialogShown = true;
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Congratulations, you win!",
-                    TITLE,
-                    JOptionPane.INFORMATION_MESSAGE
-            );
+            this.clock.stop();
+            this.timerRunning = false;
+            if (this.options.isTimed()) {
+                this.game.applyWinBonus(Math.max(1, this.elapsedSeconds));
+                this.refreshStatus();
+            }
+            this.persistVegasBank();
+            this.boardPanel.startWinAnimation();
         }
     }
 
@@ -248,11 +348,18 @@ public class SolitaireFrame extends JFrame {
         private Selection dragSelection;
         private List<Card> dragCards = List.of();
         private boolean dragMoved;
+        private boolean winAnimating;
+        private final List<Flyer> flyers = new ArrayList<>();
+        private Timer winTimer;
 
         BoardPanel() {
             final MouseAdapter mouse = new MouseAdapter() {
                 @Override
                 public void mousePressed(final MouseEvent e) {
+                    if (BoardPanel.this.winAnimating) {
+                        BoardPanel.this.stopWinAnimation();
+                        return;
+                    }
                     if (e.getButton() != MouseEvent.BUTTON1 || SolitaireFrame.this.game.isWon()) {
                         return;
                     }
@@ -366,28 +473,127 @@ public class SolitaireFrame extends JFrame {
             for (int i = 0; i < SolitaireGame.TABLEAU_COUNT; i++) {
                 this.paintTableau(g2, i);
             }
-            if (this.dragMoved && this.dragPoint != null) {
+            if (this.winAnimating) {
+                for (final Flyer flyer : this.flyers) {
+                    this.paintCard(g2, (int) flyer.x, (int) flyer.y, flyer.card, false);
+                }
+            } else if (this.dragMoved && this.dragPoint != null) {
                 int y = this.dragPoint.y - 12;
                 final int x = this.dragPoint.x - CARD_WIDTH / 2;
-                for (final Card card : this.dragCards) {
-                    this.paintCard(g2, x, y, card, true);
-                    y += FACE_UP_OVERLAP;
+                if (SolitaireFrame.this.options.isOutlineDragging()) {
+                    this.paintOutlineStack(g2, x, y, this.dragCards.size());
+                    final Hit dest = this.hitTest(this.dragPoint.x, this.dragPoint.y);
+                    if (dest != null && this.dragSelection != null
+                            && SolitaireFrame.this.game.canMove(
+                            this.dragSelection.pile(), this.dragSelection.cardCount(), dest.pile())) {
+                        g2.setColor(new Color(255, 255, 180, 90));
+                        final Rectangle highlight = this.slotRect(dest.pile());
+                        g2.fillRoundRect(highlight.x, highlight.y, highlight.width, highlight.height, 10, 10);
+                    }
+                } else {
+                    for (final Card card : this.dragCards) {
+                        this.paintCard(g2, x, y, card, true);
+                        y += FACE_UP_OVERLAP;
+                    }
                 }
             }
             g2.dispose();
         }
 
+        private Rectangle slotRect(final PileRef pile) {
+            return switch (pile.getType()) {
+                case STOCK -> this.stockRect();
+                case WASTE -> this.topWasteRect();
+                case FOUNDATION -> this.foundationRect(pile.getIndex());
+                case TABLEAU -> {
+                    final List<TableauCard> cards = SolitaireFrame.this.game.getTableau(pile.getIndex());
+                    final int x = this.tableauX(pile.getIndex());
+                    final int y = cards.isEmpty()
+                            ? this.tableauY()
+                            : this.cardYInTableau(cards, cards.size() - 1, this.tableauY());
+                    yield new Rectangle(x, y, CARD_WIDTH, CARD_HEIGHT);
+                }
+            };
+        }
+
+        private void paintOutlineStack(final Graphics2D g2, final int x, final int y, final int count) {
+            g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
+                    0, new float[]{4f, 4f}, 0));
+            g2.setColor(Color.WHITE);
+            int cy = y;
+            for (int i = 0; i < count; i++) {
+                g2.drawRoundRect(x, cy, CARD_WIDTH, CARD_HEIGHT, 10, 10);
+                cy += FACE_UP_OVERLAP;
+            }
+            g2.setStroke(new BasicStroke(1f));
+        }
+
+        void startWinAnimation() {
+            this.flyers.clear();
+            for (int f = 0; f < SolitaireGame.FOUNDATION_COUNT; f++) {
+                final List<Card> pile = SolitaireFrame.this.game.getFoundation(f);
+                if (pile.isEmpty()) {
+                    continue;
+                }
+                final Rectangle slot = this.foundationRect(f);
+                final Card top = pile.get(pile.size() - 1);
+                final Flyer flyer = new Flyer();
+                flyer.card = top;
+                flyer.x = slot.x;
+                flyer.y = slot.y;
+                flyer.vx = 6 + f * 2;
+                flyer.vy = -8;
+                this.flyers.add(flyer);
+            }
+            this.winAnimating = !this.flyers.isEmpty();
+            if (!this.winAnimating) {
+                return;
+            }
+            if (this.winTimer != null) {
+                this.winTimer.stop();
+            }
+            this.winTimer = new Timer(16, e -> {
+                final int ground = this.getHeight() - CARD_HEIGHT - 4;
+                for (final Flyer flyer : this.flyers) {
+                    flyer.x += flyer.vx;
+                    flyer.y += flyer.vy;
+                    flyer.vy += 0.7;
+                    if (flyer.y >= ground) {
+                        flyer.y = ground;
+                        flyer.vy = -Math.abs(flyer.vy) * 0.86;
+                    }
+                    if (flyer.x > this.getWidth() - CARD_WIDTH) {
+                        flyer.x = this.getWidth() - CARD_WIDTH;
+                        flyer.vx = -Math.abs(flyer.vx);
+                    } else if (flyer.x < 0) {
+                        flyer.x = 0;
+                        flyer.vx = Math.abs(flyer.vx);
+                    }
+                }
+                this.repaint();
+            });
+            this.winTimer.start();
+        }
+
+        void stopWinAnimation() {
+            this.winAnimating = false;
+            this.flyers.clear();
+            if (this.winTimer != null) {
+                this.winTimer.stop();
+            }
+            this.repaint();
+        }
+
         private void paintStock(final Graphics2D g2) {
             final Rectangle r = this.stockRect();
             if (SolitaireFrame.this.game.getStock().isEmpty()) {
-                this.paintEmptySlot(g2, r);
-                if (!SolitaireFrame.this.game.getWaste().isEmpty()) {
-                    g2.setColor(new Color(0xE8, 0xE8, 0xE8));
-                    g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
-                    final String mark = "↻";
-                    final FontMetrics fm = g2.getFontMetrics();
-                    g2.drawString(mark, r.x + (r.width - fm.stringWidth(mark)) / 2,
-                            r.y + r.height / 2 + fm.getAscent() / 2 - 4);
+                this.paintEmptyWell(g2, r);
+                if (SolitaireFrame.this.game.canRecycle()
+                        && !SolitaireFrame.this.game.getWaste().isEmpty()) {
+                    g2.setColor(new Color(0xC8, 0xE0, 0xC8));
+                    g2.setStroke(new BasicStroke(2f));
+                    g2.drawOval(r.x + 18, r.y + 30, r.width - 36, r.height - 60);
+                    g2.setStroke(new BasicStroke(1f));
                 }
             } else {
                 this.paintCardBack(g2, r.x, r.y);
@@ -395,32 +601,34 @@ public class SolitaireFrame extends JFrame {
         }
 
         private void paintWaste(final Graphics2D g2) {
-            final Rectangle r = this.wasteRect();
-            final var top = SolitaireFrame.this.game.peekWaste();
-            if (top.isEmpty()) {
-                this.paintEmptySlot(g2, r);
+            final List<Card> fan = SolitaireFrame.this.game.getWasteFan();
+            if (fan.isEmpty()) {
+                this.paintEmptyWell(g2, this.wasteRect());
                 return;
             }
             final boolean selected = SolitaireFrame.this.selection != null
                     && SolitaireFrame.this.selection.pile().getType() == PileType.WASTE;
-            if (this.hideDrag(PileRef.waste(), 1)) {
-                this.paintEmptySlot(g2, r);
-                return;
+            final int hideTop = this.hideDrag(PileRef.waste(), 1) ? fan.size() - 1 : -1;
+            for (int i = 0; i < fan.size(); i++) {
+                if (i == hideTop) {
+                    continue;
+                }
+                final int x = this.wasteRect().x + i * WASTE_FAN;
+                this.paintCard(g2, x, this.wasteRect().y, fan.get(i), selected && i == fan.size() - 1);
             }
-            this.paintCard(g2, r.x, r.y, top.get(), selected);
         }
 
         private void paintFoundation(final Graphics2D g2, final int index) {
             final Rectangle r = this.foundationRect(index);
             final var top = SolitaireFrame.this.game.peekFoundation(index);
             if (top.isEmpty()) {
-                this.paintEmptySlot(g2, r);
+                this.paintEmptyFoundation(g2, r);
                 return;
             }
             final boolean selected = SolitaireFrame.this.selection != null
                     && SolitaireFrame.this.selection.pile().equals(PileRef.foundation(index));
             if (this.hideDrag(PileRef.foundation(index), 1)) {
-                this.paintEmptySlot(g2, r);
+                this.paintEmptyFoundation(g2, r);
                 return;
             }
             this.paintCard(g2, r.x, r.y, top.get(), selected);
@@ -431,7 +639,7 @@ public class SolitaireFrame extends JFrame {
             final int baseX = this.tableauX(index);
             final int baseY = this.tableauY();
             if (pile.isEmpty()) {
-                this.paintEmptySlot(g2, new Rectangle(baseX, baseY, CARD_WIDTH, CARD_HEIGHT));
+                // XP: empty tableau is just felt, no placeholder hatch.
                 return;
             }
             final int hideFrom = this.dragHideStart(PileRef.tableau(index));
@@ -474,30 +682,34 @@ public class SolitaireFrame extends JFrame {
             return size - this.dragSelection.cardCount();
         }
 
-        private void paintEmptySlot(final Graphics2D g2, final Rectangle r) {
+        /** Dark well for empty stock / waste — no hatch. */
+        private void paintEmptyWell(final Graphics2D g2, final Rectangle r) {
             g2.setColor(EMPTY_SLOT);
             g2.fillRoundRect(r.x, r.y, r.width, r.height, 10, 10);
             g2.setColor(new Color(0x00, 0x50, 0x00));
             g2.drawRoundRect(r.x, r.y, r.width, r.height, 10, 10);
         }
 
-        private void paintCardBack(final Graphics2D g2, final int x, final int y) {
-            g2.setColor(CARD_BACK);
-            g2.fillRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 10, 10);
-            g2.setColor(CARD_BORDER);
-            g2.drawRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 10, 10);
-            g2.setColor(CARD_BACK_PATTERN);
-            g2.drawRoundRect(x + 6, y + 6, CARD_WIDTH - 12, CARD_HEIGHT - 12, 8, 8);
-            for (int row = 0; row < 4; row++) {
-                for (int col = 0; col < 3; col++) {
-                    final int px = x + 16 + col * 16;
-                    final int py = y + 20 + row * 18;
-                    g2.drawLine(px, py + 6, px + 6, py);
-                    g2.drawLine(px + 6, py, px + 12, py + 6);
-                    g2.drawLine(px + 12, py + 6, px + 6, py + 12);
-                    g2.drawLine(px + 6, py + 12, px, py + 6);
-                }
+        /**
+         * XP {@code cards.dll} empty suit-stack: a clipped fine hatch inside the well.
+         * Only foundations use this; tableau empties are bare felt.
+         */
+        private void paintEmptyFoundation(final Graphics2D g2, final Rectangle r) {
+            this.paintEmptyWell(g2, r);
+            final Shape clip = g2.getClip();
+            g2.setClip(new java.awt.geom.RoundRectangle2D.Float(
+                    r.x + 3, r.y + 3, r.width - 6, r.height - 6, 8, 8));
+            g2.setColor(new Color(0x00, 0x58, 0x00));
+            final int step = 6;
+            for (int i = -r.height; i < r.width + r.height; i += step) {
+                g2.drawLine(r.x + i, r.y + 3, r.x + i - r.height, r.y + r.height - 3);
             }
+            g2.setClip(clip);
+        }
+
+        private void paintCardBack(final Graphics2D g2, final int x, final int y) {
+            CardBack.at(SolitaireFrame.this.options.getDeckBack())
+                    .paint(g2, x, y, CARD_WIDTH, CARD_HEIGHT);
         }
 
         private void paintCard(final Graphics2D g2, final int x, final int y, final Card card,
@@ -540,6 +752,12 @@ public class SolitaireFrame extends JFrame {
                     CARD_WIDTH, CARD_HEIGHT);
         }
 
+        private Rectangle topWasteRect() {
+            final int fan = Math.max(0, SolitaireFrame.this.game.getWasteFan().size() - 1);
+            final Rectangle base = this.wasteRect();
+            return new Rectangle(base.x + fan * WASTE_FAN, base.y, CARD_WIDTH, CARD_HEIGHT);
+        }
+
         private Rectangle foundationRect(final int index) {
             final int start = this.originX() + 3 * (CARD_WIDTH + CARD_GAP);
             return new Rectangle(start + index * (CARD_WIDTH + CARD_GAP), this.topY(),
@@ -575,8 +793,20 @@ public class SolitaireFrame extends JFrame {
             if (this.stockRect().contains(x, y)) {
                 return new Hit(PileRef.stock(), SolitaireFrame.this.game.getStock().isEmpty() ? 0 : 1);
             }
-            if (this.wasteRect().contains(x, y)) {
-                return new Hit(PileRef.waste(), SolitaireFrame.this.game.peekWaste().isPresent() ? 1 : 0);
+            final List<Card> fan = SolitaireFrame.this.game.getWasteFan();
+            if (fan.isEmpty()) {
+                if (this.wasteRect().contains(x, y)) {
+                    return new Hit(PileRef.waste(), 0);
+                }
+            } else {
+                for (int i = fan.size() - 1; i >= 0; i--) {
+                    final Rectangle r = new Rectangle(
+                            this.wasteRect().x + i * WASTE_FAN, this.wasteRect().y,
+                            CARD_WIDTH, CARD_HEIGHT);
+                    if (r.contains(x, y)) {
+                        return new Hit(PileRef.waste(), i == fan.size() - 1 ? 1 : 0);
+                    }
+                }
             }
             for (int i = 0; i < SolitaireGame.FOUNDATION_COUNT; i++) {
                 if (this.foundationRect(i).contains(x, y)) {
@@ -616,5 +846,13 @@ public class SolitaireFrame extends JFrame {
             }
             return null;
         }
+    }
+
+    private static final class Flyer {
+        private Card card;
+        private double x;
+        private double y;
+        private double vx;
+        private double vy;
     }
 }

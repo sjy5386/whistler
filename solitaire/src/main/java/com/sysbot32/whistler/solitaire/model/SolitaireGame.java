@@ -40,21 +40,57 @@ public class SolitaireGame {
 
     private GameStatus status = GameStatus.PLAYING;
     private int moveCount;
+    private int drawCount = 1;
+    private ScoringMode scoring = ScoringMode.NONE;
+    private int score;
+    /** Completed trips through the stock (deal starts as pass 1). */
+    private int passCount = 1;
+    private int recycleCount;
+    private Snapshot undoSnapshot;
 
-    /** New game with a shuffled 52-card deck. */
+    /** New game with a shuffled 52-card deck (Draw One, no scoring — tests / fixtures). */
     public SolitaireGame() {
         this(ThreadLocalRandom.current());
     }
 
     /** New game shuffled with the given RNG (reproducible when seeded). */
     public SolitaireGame(final Random random) {
+        this(random, 1, ScoringMode.NONE, 0);
+    }
+
+    public SolitaireGame(final Random random, final int drawCount, final ScoringMode scoring,
+                         final int startingScore) {
         Objects.requireNonNull(random, "random");
         this.initPiles();
+        this.drawCount = this.normalizeDrawCount(drawCount);
+        this.scoring = Objects.requireNonNull(scoring, "scoring");
+        this.score = startingScore;
         this.deal(Deck.createShuffled(random));
+    }
+
+    public SolitaireGame(final SolitaireOptions options) {
+        this(ThreadLocalRandom.current(),
+                options.getDrawCount(),
+                options.getScoring(),
+                startingScore(options));
     }
 
     private SolitaireGame(final boolean fixture) {
         this.initPiles();
+    }
+
+    static int startingScore(final SolitaireOptions options) {
+        if (options.getScoring() != ScoringMode.VEGAS) {
+            return 0;
+        }
+        if (options.isKeepScore()) {
+            return options.getVegasBank() - 52;
+        }
+        return -52;
+    }
+
+    private int normalizeDrawCount(final int count) {
+        return count >= 3 ? 3 : 1;
     }
 
     private void initPiles() {
@@ -166,6 +202,31 @@ public class SolitaireGame {
         return this.status == GameStatus.WON;
     }
 
+    public boolean canUndo() {
+        return this.undoSnapshot != null && this.status != GameStatus.WON;
+    }
+
+    /**
+     * Undoes the last card moved or the last draw/recycle (classic single-step Undo).
+     */
+    public boolean undo() {
+        if (!this.canUndo()) {
+            return false;
+        }
+        this.undoSnapshot.restore(this);
+        this.undoSnapshot = null;
+        return true;
+    }
+
+    /** Rightmost (playable) waste cards, up to the current draw count — for Draw-Three fan. */
+    public List<Card> getWasteFan() {
+        final int n = Math.min(this.drawCount, this.waste.size());
+        if (n == 0) {
+            return List.of();
+        }
+        return List.copyOf(this.waste.subList(this.waste.size() - n, this.waste.size()));
+    }
+
     /**
      * Length of the valid face-up descending alternating run ending at the tableau top,
      * starting from {@code cardsFromTop} cards from the top (1 = only top card).
@@ -231,9 +292,11 @@ public class SolitaireGame {
         if (!this.isLegalMove(from, cardCount, to)) {
             return false;
         }
+        this.captureUndo();
         final List<Card> moving = this.takeCards(from, cardCount);
         this.placeCards(moving, to);
         this.uncoverIfNeeded(from);
+        this.applyMoveScore(from, to);
         this.moveCount++;
         this.updateWinStatus();
         return true;
@@ -258,9 +321,10 @@ public class SolitaireGame {
     }
 
     /**
-     * Draw-1: move the stock top onto the waste (the new waste top is playable).
+     * Draw: move up to {@link #drawCount} cards from stock onto waste
+     * (the new waste top is the playable card).
      *
-     * @return {@code true} if a card was drawn
+     * @return {@code true} if at least one card was drawn
      */
     public boolean draw() {
         if (this.status != GameStatus.PLAYING) {
@@ -269,7 +333,11 @@ public class SolitaireGame {
         if (this.stock.isEmpty()) {
             return false;
         }
-        this.waste.add(this.stock.remove(this.stock.size() - 1));
+        this.captureUndo();
+        final int n = Math.min(this.drawCount, this.stock.size());
+        for (int i = 0; i < n; i++) {
+            this.waste.add(this.stock.remove(this.stock.size() - 1));
+        }
         this.moveCount++;
         return true;
     }
@@ -277,6 +345,8 @@ public class SolitaireGame {
     /**
      * When the stock is empty, turn the waste pile over to become the stock
      * (first-drawn waste card becomes the next stock top).
+     * <p>
+     * Vegas Draw One forbids recycling; Vegas Draw Three allows two redeals.
      *
      * @return {@code true} if the waste was recycled
      */
@@ -287,10 +357,30 @@ public class SolitaireGame {
         if (!this.stock.isEmpty() || this.waste.isEmpty()) {
             return false;
         }
+        if (!this.canRecycle()) {
+            return false;
+        }
+        this.captureUndo();
         Collections.reverse(this.waste);
         this.stock.addAll(this.waste);
         this.waste.clear();
+        this.recycleCount++;
+        this.passCount++;
+        this.applyRecyclePenalty();
         this.moveCount++;
+        return true;
+    }
+
+    public boolean canRecycle() {
+        if (this.stock.isEmpty() && this.waste.isEmpty()) {
+            return false;
+        }
+        if (this.scoring == ScoringMode.VEGAS) {
+            if (this.drawCount == 1) {
+                return false;
+            }
+            return this.recycleCount < 2;
+        }
         return true;
     }
 
@@ -452,6 +542,125 @@ public class SolitaireGame {
         }
     }
 
+    private void applyMoveScore(final PileRef from, final PileRef to) {
+        if (this.scoring == ScoringMode.NONE) {
+            return;
+        }
+        if (this.scoring == ScoringMode.VEGAS) {
+            if (to.getType() == PileType.FOUNDATION) {
+                this.score += 5;
+            } else if (from.getType() == PileType.FOUNDATION) {
+                this.score -= 5;
+            }
+            return;
+        }
+        // Standard
+        if (to.getType() == PileType.FOUNDATION) {
+            this.score += 10;
+        }
+        if (from.getType() == PileType.WASTE && to.getType() == PileType.TABLEAU) {
+            this.score += 5;
+        }
+        if (from.getType() == PileType.FOUNDATION && to.getType() == PileType.TABLEAU) {
+            this.score -= 15;
+        }
+    }
+
+    private void applyRecyclePenalty() {
+        if (this.scoring != ScoringMode.STANDARD) {
+            return;
+        }
+        if (this.drawCount == 1 && this.passCount > 1) {
+            this.score -= 100;
+        } else if (this.drawCount == 3 && this.passCount > 3) {
+            this.score -= 20;
+        }
+    }
+
+    /**
+     * Standard timed play: −2 points every 10 seconds.
+     */
+    public void applyTimePenalty() {
+        if (this.status != GameStatus.PLAYING || this.scoring != ScoringMode.STANDARD) {
+            return;
+        }
+        this.score -= 2;
+    }
+
+    /**
+     * Timed Standard win bonus: 700,000 / seconds (classic Microsoft formula).
+     */
+    public void applyWinBonus(final int elapsedSeconds) {
+        if (this.scoring != ScoringMode.STANDARD || elapsedSeconds <= 0) {
+            return;
+        }
+        this.score += 700_000 / elapsedSeconds;
+    }
+
+    private void captureUndo() {
+        this.undoSnapshot = Snapshot.capture(this);
+    }
+
+    private static final class Snapshot {
+        private final List<List<TableauCard>> tableau;
+        private final List<List<Card>> foundations;
+        private final List<Card> stock;
+        private final List<Card> waste;
+        private final GameStatus status;
+        private final int moveCount;
+        private final int score;
+        private final int passCount;
+        private final int recycleCount;
+
+        private Snapshot(final SolitaireGame game) {
+            this.tableau = copyTableau(game.tableau);
+            this.foundations = copyCards(game.foundations);
+            this.stock = new ArrayList<>(game.stock);
+            this.waste = new ArrayList<>(game.waste);
+            this.status = game.status;
+            this.moveCount = game.moveCount;
+            this.score = game.score;
+            this.passCount = game.passCount;
+            this.recycleCount = game.recycleCount;
+        }
+
+        static Snapshot capture(final SolitaireGame game) {
+            return new Snapshot(game);
+        }
+
+        void restore(final SolitaireGame game) {
+            game.tableau.clear();
+            game.tableau.addAll(copyTableau(this.tableau));
+            game.foundations.clear();
+            game.foundations.addAll(copyCards(this.foundations));
+            game.stock.clear();
+            game.stock.addAll(this.stock);
+            game.waste.clear();
+            game.waste.addAll(this.waste);
+            game.status = this.status;
+            game.moveCount = this.moveCount;
+            game.score = this.score;
+            game.passCount = this.passCount;
+            game.recycleCount = this.recycleCount;
+        }
+
+        private static List<List<TableauCard>> copyTableau(final List<List<TableauCard>> source) {
+            final List<List<TableauCard>> copy = new ArrayList<>(source.size());
+            for (final List<TableauCard> pile : source) {
+                copy.add(new ArrayList<>(pile));
+            }
+            return copy;
+        }
+
+        private static List<List<Card>> copyCards(final List<List<Card>> source) {
+            final List<List<Card>> copy = new ArrayList<>(source.size());
+            for (final List<Card> pile : source) {
+                copy.add(new ArrayList<>(pile));
+            }
+            return copy;
+        }
+    }
+
     private void checkTableauIndex(final int index) {
         if (index < 0 || index >= TABLEAU_COUNT) {
             throw new IndexOutOfBoundsException("Tableau index: " + index);
@@ -493,5 +702,15 @@ public class SolitaireGame {
     /** Pushes a card onto the waste (new top). For fixtures only. */
     public void pushWasteForTest(final Card card) {
         this.waste.add(Objects.requireNonNull(card, "card"));
+    }
+
+    /** Draw One vs Draw Three. For fixtures only. */
+    public void setDrawCountForTest(final int drawCount) {
+        this.drawCount = this.normalizeDrawCount(drawCount);
+    }
+
+    /** Scoring system. For fixtures only. */
+    public void setScoringForTest(final ScoringMode scoring) {
+        this.scoring = Objects.requireNonNull(scoring, "scoring");
     }
 }

@@ -337,4 +337,79 @@ class SolitaireGameTest {
         assertFalse(game.isWon());
         assertEquals(0, game.getFoundationCardCount());
     }
+
+    @Test
+    void drawThreeTurnsOverUpToThreeCards() {
+        final SolitaireGame game = SolitaireGame.emptyBoard();
+        game.setDrawCountForTest(3);
+        game.pushStockForTest(card(Suit.CLUBS, Rank.FOUR));
+        game.pushStockForTest(card(Suit.HEARTS, Rank.THREE));
+        game.pushStockForTest(card(Suit.SPADES, Rank.TWO));
+        game.pushStockForTest(card(Suit.DIAMONDS, Rank.ACE));
+
+        assertTrue(game.draw());
+        assertEquals(1, game.getStock().size());
+        assertEquals(3, game.getWaste().size());
+        assertEquals(card(Suit.HEARTS, Rank.THREE), game.peekWaste().orElseThrow());
+        assertEquals(List.of(
+                card(Suit.DIAMONDS, Rank.ACE),
+                card(Suit.SPADES, Rank.TWO),
+                card(Suit.HEARTS, Rank.THREE)
+        ), game.getWasteFan());
+        assertFalse(game.canMove(PileRef.waste(), 1, PileRef.foundation(0)));
+    }
+
+    @Test
+    void undoRestoresLastDrawAndLastMove() {
+        final SolitaireGame game = SolitaireGame.emptyBoard();
+        game.pushStockForTest(card(Suit.CLUBS, Rank.ACE));
+        assertTrue(game.draw());
+        assertTrue(game.undo());
+        assertTrue(game.getWaste().isEmpty());
+        assertEquals(card(Suit.CLUBS, Rank.ACE), game.peekStock().orElseThrow());
+        assertFalse(game.undo());
+
+        game.pushTableauForTest(0, card(Suit.HEARTS, Rank.ACE), true);
+        assertTrue(game.move(PileRef.tableau(0), 1, PileRef.foundation(0)));
+        assertTrue(game.undo());
+        assertTrue(game.getFoundation(0).isEmpty());
+        assertEquals(card(Suit.HEARTS, Rank.ACE), game.peekTableau(0).orElseThrow().getCard());
+    }
+
+    @Test
+    void vegasDrawOneForbidsRecycling() {
+        final SolitaireGame game = SolitaireGame.emptyBoard();
+        game.setScoringForTest(ScoringMode.VEGAS);
+        game.setDrawCountForTest(1);
+        game.pushStockForTest(card(Suit.SPADES, Rank.KING));
+        assertTrue(game.draw());
+        assertFalse(game.recycleWaste());
+        assertFalse(game.canRecycle());
+        assertEquals(card(Suit.SPADES, Rank.KING), game.peekWaste().orElseThrow());
+    }
+
+    @Test
+    void standardScoringAwardsFoundationAndWasteToTableau() {
+        final SolitaireGame game = SolitaireGame.emptyBoard();
+        game.setScoringForTest(ScoringMode.STANDARD);
+        game.pushWasteForTest(card(Suit.CLUBS, Rank.ACE));
+        game.pushWasteForTest(card(Suit.HEARTS, Rank.FIVE));
+        game.pushTableauForTest(0, card(Suit.SPADES, Rank.SIX), true);
+
+        assertTrue(game.move(PileRef.waste(), 1, PileRef.tableau(0)));
+        assertEquals(5, game.getScore());
+        assertTrue(game.move(PileRef.waste(), 1, PileRef.foundation(0)));
+        assertEquals(15, game.getScore());
+    }
+
+    @Test
+    void standardDrawOneRecycleAfterFirstPassCostsOneHundred() {
+        final SolitaireGame game = SolitaireGame.emptyBoard();
+        game.setScoringForTest(ScoringMode.STANDARD);
+        game.setDrawCountForTest(1);
+        game.pushStockForTest(card(Suit.CLUBS, Rank.TWO));
+        assertTrue(game.draw());
+        assertTrue(game.recycleWaste());
+        assertEquals(-100, game.getScore());
+    }
 }
