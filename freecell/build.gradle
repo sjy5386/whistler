@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     implementation project(':common')
+    implementation project(':common:card')
 
     implementation 'ch.qos.logback:logback-classic:1.5.6'
 }

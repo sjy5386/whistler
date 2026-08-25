@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell.card;
+package com.sysbot32.whistler.card;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

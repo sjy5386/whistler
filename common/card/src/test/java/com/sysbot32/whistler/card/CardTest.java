@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell.card;
+package com.sysbot32.whistler.card;
 
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +28,7 @@ class CardTest {
         assertTrue(blackFive.canPlaceOnCascade(redSix));
         assertFalse(blackFive.canPlaceOnCascade(blackSix));
         assertFalse(redFour.canPlaceOnCascade(redSix));
+        // FreeCell empty cascade: any card. Klondike must not use this for empty tableau.
         assertTrue(blackFive.canPlaceOnCascade(null));
     }
 
@@ -44,5 +45,13 @@ class CardTest {
         assertTrue(three.canPlaceOnFoundation(two));
         assertFalse(twoHearts.canPlaceOnFoundation(ace));
         assertFalse(three.canPlaceOnFoundation(ace));
+    }
+
+    @Test
+    void adjacentRanks() {
+        assertEquals(Rank.TWO, Rank.ACE.next());
+        assertEquals(Rank.QUEEN, Rank.KING.previous());
+        assertEquals(null, Rank.KING.next());
+        assertEquals(null, Rank.ACE.previous());
     }
 }

@@ -1,0 +1,5 @@
+plugins {
+    id 'java-library'
+}
+
+// Shared 52-card identity (suit, rank, deck) for FreeCell and Solitaire.

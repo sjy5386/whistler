@@ -11,6 +11,7 @@ plugins {
 rootProject.name = 'whistler'
 
 include 'common'
+include 'common:card'
 include 'notepad'
 include 'paint'
 include 'minesweeper'

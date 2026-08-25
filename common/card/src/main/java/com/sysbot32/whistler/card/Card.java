@@ -1,9 +1,14 @@
-package com.sysbot32.whistler.freecell.card;
+package com.sysbot32.whistler.card;
 
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Identity of one card in a standard 52-card deck (no jokers).
+ * Empty-pile acceptance is a per-game rule — do not treat
+ * {@link #canPlaceOnCascade(Card)} with a {@code null} target as Klondike law.
+ */
 @Getter
 @EqualsAndHashCode
 @RequiredArgsConstructor
@@ -24,8 +29,11 @@ public final class Card {
     }
 
     /**
-     * Whether this card can be stacked onto {@code target} in a cascade
-     * (one rank lower, opposite color).
+     * Whether this card can be stacked onto {@code target} as a descending
+     * alternating-color build (one rank lower, opposite color).
+     * <p>
+     * A {@code null} target means an empty FreeCell cascade (any card). Klondike
+     * empty tableau must not call this with {@code null}; that game accepts only a King.
      */
     public boolean canPlaceOnCascade(final Card target) {
         if (target == null) {
@@ -37,7 +45,7 @@ public final class Card {
 
     /**
      * Whether this card can be placed onto a foundation whose current top is {@code top}
-     * ({@code null} means empty foundation — Ace only).
+     * ({@code null} means empty foundation — Ace only). Same-suit ascending Ace→King.
      */
     public boolean canPlaceOnFoundation(final Card top) {
         if (top == null) {

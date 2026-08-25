@@ -1,8 +1,8 @@
 package com.sysbot32.whistler.freecell.model;
 
-import com.sysbot32.whistler.freecell.card.Card;
-import com.sysbot32.whistler.freecell.card.Rank;
-import com.sysbot32.whistler.freecell.card.Suit;
+import com.sysbot32.whistler.card.Card;
+import com.sysbot32.whistler.card.Rank;
+import com.sysbot32.whistler.card.Suit;
 
 import org.junit.jupiter.api.Test;
 

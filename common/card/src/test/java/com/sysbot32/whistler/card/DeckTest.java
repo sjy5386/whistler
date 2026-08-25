@@ -1,4 +1,4 @@
-package com.sysbot32.whistler.freecell.card;
+package com.sysbot32.whistler.card;
 
 import org.junit.jupiter.api.Test;
 
@@ -14,8 +14,8 @@ class DeckTest {
     @Test
     void orderedDeckHas52UniqueCards() {
         final List<Card> cards = Deck.createOrdered();
-        assertEquals(52, cards.size());
-        assertEquals(52, new HashSet<>(cards).size());
+        assertEquals(Deck.SIZE, cards.size());
+        assertEquals(Deck.SIZE, new HashSet<>(cards).size());
     }
 
     @Test
