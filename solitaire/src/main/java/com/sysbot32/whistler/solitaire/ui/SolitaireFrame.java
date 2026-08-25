@@ -1,6 +1,7 @@
 package com.sysbot32.whistler.solitaire.ui;
 
 import com.sysbot32.whistler.card.Card;
+import com.sysbot32.whistler.card.ui.CardPainter;
 import com.sysbot32.whistler.solitaire.model.PileRef;
 import com.sysbot32.whistler.solitaire.model.PileType;
 import com.sysbot32.whistler.solitaire.model.ScoringMode;
@@ -31,12 +32,7 @@ import java.util.Objects;
 public class SolitaireFrame extends JFrame {
     private static final String TITLE = "Solitaire";
     private static final Color FELT_GREEN = new Color(0x00, 0x80, 0x00);
-    private static final Color CARD_FACE = new Color(0xFF, 0xFF, 0xF0);
-    private static final Color CARD_SELECTED = new Color(0xFF, 0xFF, 0x99);
-    private static final Color CARD_BORDER = new Color(0x20, 0x20, 0x20);
     private static final Color EMPTY_SLOT = new Color(0x00, 0x6B, 0x00);
-    private static final Color RED_INK = new Color(0xC0, 0x00, 0x00);
-    private static final Color BLACK_INK = new Color(0x10, 0x10, 0x10);
 
     static final int CARD_WIDTH = 72;
     static final int CARD_HEIGHT = 100;
@@ -714,33 +710,7 @@ public class SolitaireFrame extends JFrame {
 
         private void paintCard(final Graphics2D g2, final int x, final int y, final Card card,
                                final boolean selected) {
-            g2.setColor(selected ? CARD_SELECTED : CARD_FACE);
-            g2.fillRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 10, 10);
-            g2.setColor(CARD_BORDER);
-            g2.drawRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 10, 10);
-
-            final Color ink = card.isRed() ? RED_INK : BLACK_INK;
-            g2.setColor(ink);
-
-            final String rank = card.getRank().getLabel();
-            final String suit = card.getSuit().getSymbol();
-
-            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
-            g2.drawString(rank, x + 5, y + 15);
-            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-            g2.drawString(suit, x + 5, y + 28);
-
-            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
-            final FontMetrics fmRank = g2.getFontMetrics();
-            g2.drawString(rank, x + CARD_WIDTH - 5 - fmRank.stringWidth(rank), y + CARD_HEIGHT - 18);
-            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-            final FontMetrics fmSuit = g2.getFontMetrics();
-            g2.drawString(suit, x + CARD_WIDTH - 5 - fmSuit.stringWidth(suit), y + CARD_HEIGHT - 5);
-
-            g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 28));
-            final FontMetrics fm = g2.getFontMetrics();
-            g2.drawString(suit, x + (CARD_WIDTH - fm.stringWidth(suit)) / 2,
-                    y + CARD_HEIGHT / 2 + fm.getAscent() / 2 - 4);
+            CardPainter.paint(g2, x, y, card, selected);
         }
 
         private Rectangle stockRect() {

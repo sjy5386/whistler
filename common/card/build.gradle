@@ -2,4 +2,4 @@ plugins {
     id 'java-library'
 }
 
-// Shared 52-card identity (suit, rank, deck) for FreeCell and Solitaire.
+// Shared 52-card identity and Swing face art for FreeCell and Solitaire.
