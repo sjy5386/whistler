@@ -40,3 +40,6 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Local XP Sound Recorder comparison artifacts (Microsoft binaries / Wine) ###
+sound_recorder/ref/
